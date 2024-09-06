@@ -2,6 +2,10 @@ name: Build
 
 on: [push]
 
+# gh-pages needs write permissions
+permissions:
+        contents: write
+
 jobs:
   lint:
     runs-on: ubuntu-latest
