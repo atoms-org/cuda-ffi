@@ -30,7 +30,8 @@ classifiers = [ #! Update me
 
 [tool.poetry.dependencies]
 python = "^3.12"
-# cuda-python = "^12.6.0"
+numpy = "^2.1.1"
+cuda-python = "^12.6.0"
 
 [tool.poetry.group.dev.dependencies]
 bandit = "^1.7.1"
