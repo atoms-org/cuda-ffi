@@ -1,0 +1,241 @@
+# Poetry pyproject.toml: https://python-poetry.org/docs/pyproject/
+[build-system]
+requires = ["poetry_core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "cudaffi"
+version = "0.1.0"
+description = "CUDA FFI"
+readme = "README.md"
+authors = ["Adam Powers <apowers@ato.ms>"]
+license = "MIT"
+repository = "https://github.com/apowers313/cuda-ffi"
+homepage = "https://github.com/apowers313/cuda-ffi"
+
+# Keywords description https://python-poetry.org/docs/pyproject/#keywords
+keywords = ["cuda", "ffi", "gpu", "gpgpu"] #! Update me
+
+# Pypi classifiers: https://pypi.org/classifiers/
+classifiers = [ #! Update me
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Environment :: GPU :: NVIDIA CUDA",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+# cuda-python = "^12.6.0"
+
+[tool.poetry.group.dev.dependencies]
+bandit = "^1.7.1"
+black = "^24.4.2"
+isort = { extras = ["colors"], version = "^5.10.1" }
+mypy = "^1.4.1"
+mypy-extensions = "^1.0.0"
+pre-commit = "^3.3.3"
+pydocstyle = "^6.1.1"
+pylint = "^3.2.3"
+pytest = "^8.2.2"
+pyupgrade = "^3.8.0"
+safety = "^2.3.5"
+coverage = "^7.2.7"
+coverage-badge = "^1.1.0"
+pytest-html = "^3.1.1"
+pytest-cov = "^4.1.0"
+json-fix = "^0.5.2"
+types-cachetools = "^5.3.0.5"
+ruff = "^0.5.7"
+interrogate = "^1.5.0"
+mkdocs = "^1.6.0"
+mkdocstrings = { extras = ["python"], version = "^0.25.2" }
+mkdocs-material = "^9.1.21"
+mkdocs-gen-files = "^0.5.0"
+mkdocs-literate-nav = "^0.6.0"
+pytest-profiling = "^1.7.0"
+ipykernel = "^6.29.4"
+matplotlib = "^3.9.0"
+ipympl = "^0.9.4"
+plotly = "^5.22.0"
+nbformat = "^5.10.4"
+gputil = "^1.4.0"
+deptry = "^0.20.0"
+
+[tool.deptry]
+# https://fpgmaas.github.io/deptry/usage/
+exclude = [
+  "docs",
+  "site",
+  "venv",
+  ".venv",
+  ".direnv",
+  "tests",
+  ".git",
+  "setup.py",
+  "experiments",
+]
+ignore = ["DEP003"]
+
+[tool.deptry.per_rule_ignores]
+DEP002 = ["pydot"] # pydot is an optional dependency for networkx
+
+[tool.black]
+# https://github.com/psf/black
+target-version = ["py312"]
+line-length = 100
+
+exclude = '''
+/(
+    \.git
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+    | env
+    | venv
+)/
+'''
+
+[tool.interrogate]
+# ignore-regex = ^get$,^mock_.*,.*BaseClass.*
+exclude = ["setup.py", "docs", "build", "tests"]
+# whitelist-regex =
+# color = truegenerate-badge = .# possible values: 0 (minimal output), 1 (-v), 2 (-vv)
+# badge-format = svg
+ignore-init-method = true
+ignore-init-module = true
+ignore-magic = true
+ignore-semiprivate = false
+ignore-private = true
+ignore-property-decorators = false
+ignore-module = false
+ignore-nested-functions = true
+ignore-nested-classes = true
+ignore-setters = true
+fail-under = 55
+verbose = 0
+quiet = false
+omit-covered-files = false
+
+[tool.ruff]
+# https://beta.ruff.rs/docs/configuration/
+line-length = 100
+fix-only = true
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint]
+extend-select = ["T201", "F401", "ERA001", "RUF100"] #"DOC"
+unfixable = ["T201"]
+select = ["D"]
+ignore = [
+  "D105", # Missing docstring in magic method
+  "D107", # Missing docstring in __init__
+  "D205", # 1 blank line required between summary line and description
+  "D415", # First line should end with a period, question mark, or exclamation point
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+"*_test.py" = ["D"]
+
+[tool.mypy]
+# https://mypy.readthedocs.io/en/latest/config_file.html#using-a-pyproject-toml-file
+python_version = "3.12"
+pretty = true
+show_traceback = true
+color_output = true
+
+allow_redefinition = false
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
+no_implicit_reexport = true
+no_implicit_optional = true
+show_column_numbers = true
+show_error_codes = true
+show_error_context = true
+strict_equality = true
+strict_optional = true
+warn_no_return = true
+warn_redundant_casts = true
+warn_return_any = true
+warn_unreachable = true
+warn_unused_configs = true
+warn_unused_ignores = true
+follow_imports = "silent"
+plugins = ["numpy.typing.mypy_plugin"]
+exclude = ["site"]
+
+[tool.pytest.ini_options]
+# https://docs.pytest.org/en/6.2.x/customize.html#pyproject-toml
+# Directories that are not visited by pytest collector:
+norecursedirs = [
+  "hooks",
+  "*.egg",
+  ".eggs",
+  "dist",
+  "build",
+  "docs",
+  ".tox",
+  ".git",
+  "__pycache__",
+]
+doctest_optionflags = [
+  "NUMBER",
+  "NORMALIZE_WHITESPACE",
+  "IGNORE_EXCEPTION_DETAIL",
+]
+# filterwarnings = []
+
+markers = [
+  "slow: tests that take a long time to run",
+  #  "pending: tests that haven't been written yet"
+]
+
+# Extra options:
+addopts = [
+  "--strict-markers",
+  #"--tb=short",
+  "--doctest-modules",
+  "--doctest-continue-on-failure",
+  #"--cov-report=html",
+  #"--cov-report=term:skip-covered",
+  #"--cov-append",
+  #"--no-cov-on-fail",
+  # "--cov-fail-under=80",
+  # "--emoji",
+  #"-rA",
+  "-s",
+  "-m not slow",
+  # "not slow",
+]
+
+[tool.coverage.run]
+source = ["cudaffi"]
+omit = []
+
+[coverage.paths]
+source = "cudaffi"
+
+[coverage.run]
+branch = true
+
+[coverage.report]
+fail_under = 90
+show_missing = true

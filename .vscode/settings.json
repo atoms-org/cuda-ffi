@@ -1,0 +1,17 @@
+{
+    "python.testing.pytestArgs": [
+        "-s",
+        "."
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit",
+        "source.fixAll": "explicit"
+    },
+    "mypy-type-checker.importStrategy": "fromEnvironment",
+    "mypy-type-checker.path": [
+        "./.venv/bin/mypy"
+    ]
+}

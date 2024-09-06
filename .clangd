@@ -1,0 +1,2 @@
+CompileFlags:
+  Add: [--cuda-gpu-arch=sm_89]

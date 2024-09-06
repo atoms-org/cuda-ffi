@@ -1,0 +1,33 @@
+- name: priority:high
+  description: This is a high priority
+  color: e99695
+- name: priority:medium
+  description: This is a medium priority
+  color: fef2c0
+- name: priority:low
+  description: This is a low priority
+  color: c2e0c6
+- name: 🐞 type:bug
+  description: Error. Does not compute.
+  color: ffffff
+- name: ☢️ type:core
+  description: Core feature
+  color: ffffff
+- name: ⬇ type:dep
+  description: Pull requests that update a dependency file
+  color: ffffff
+- name: 📦 type:devops
+  description: CI/CD
+  color: ffffff
+- name: 📒 type:docs
+  description: Improvements or additions to documentation
+  color: ffffff
+- name: ♻️ type:refactor
+  description: Refactoring to streamline code.
+  color: ffffff
+- name: ✏️ type:test
+  description: Improvements to tests or test coverage
+  color: ffffff
+- name: 🛠 type:tools
+  description: Supporting features for debugging, etc.
+  color: ffffff

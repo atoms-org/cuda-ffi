@@ -1,0 +1,32 @@
+# OSX junk
+.DS_Store
+
+# tempfiles
+*~
+tmp/
+
+# coverage data
+.coverage
+coverage.lcov
+
+# python cache
+__pycache__/
+
+# Sphinx documentation
+docs/_build/
+docs/_autosummary
+docs/_modules
+docs/reference/
+
+# Ignore config files
+.secrets.*
+.env
+
+# Ignore NetHack play data
+env_dump.py
+
+# profiling data
+prof/
+
+# ignore site files
+site/

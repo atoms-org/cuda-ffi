@@ -1,0 +1,19 @@
+site_name: CUDA FFI
+
+theme:
+  name: "material"
+
+plugins:
+- search
+- gen-files:
+    scripts:
+    - docs/gen_ref_pages.py
+- literate-nav:
+    nav_file: SUMMARY.md
+- mkdocstrings:
+    default_handler: python
+    handlers:
+      python:
+        paths: [cudaffi]    
+        # options:
+        #   show_if_no_docstring: true
