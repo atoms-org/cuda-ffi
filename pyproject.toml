@@ -51,7 +51,7 @@ pytest-html = "^3.1.1"
 pytest-cov = "^4.1.0"
 json-fix = "^0.5.2"
 types-cachetools = "^5.3.0.5"
-ruff = "^0.5.7"
+ruff = "^0.6.4"
 interrogate = "^1.5.0"
 mkdocs = "^1.6.0"
 mkdocstrings = { extras = ["python"], version = "^0.25.2" }
