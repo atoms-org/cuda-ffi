@@ -1,4 +1,4 @@
-from cudaffi.core import CudaContext, CudaDevice, CudaStream
+from cudaffi.core import CudaContext, CudaDevice, CudaStream, init
 
 
 class TestDevice:
@@ -14,3 +14,8 @@ class TestContext:
 class TestStream:
     def test_basic(self) -> None:
         CudaStream()
+
+
+class TestInit:
+    def test_basic(self) -> None:
+        init(0)
