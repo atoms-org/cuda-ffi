@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 """CUDA Source Modules"""
 
 import ctypes
@@ -61,18 +63,26 @@ class BlockSpecCallback(Protocol):
     def __call__(self, name: str, mod: CudaModule, *args: Any) -> BlockSpec: ...
 
 
+class CudaFunctionNameNotFound(Exception):
+    pass
+
+
 class CudaFunction:
     def __init__(self, mod: CudaModule, name: str) -> None:
+        ret = cuda.cuModuleGetFunction(mod.nv_module, name.encode())
+        if ret[0] == cuda.CUresult.CUDA_ERROR_NOT_FOUND:
+            raise CudaFunctionNameNotFound(f"CUDA function '{name}' does not exist")
+
+        # check for other errors
+        checkCudaErrors(ret)
+
+        self.__nv_kernel__: NvKernel = ret[1]
         self.__cuda_module__ = mod
         self.__name__ = name
         self.__default_grid__: GridSpecCallback | GridSpec = (1, 1, 1)
         self.__default_block__: BlockSpecCallback | BlockSpec = (1, 1, 1)
-        self.__nv_kernel__: NvKernel = checkCudaErrors(
-            cuda.cuModuleGetFunction(mod.nv_module, name.encode())
-        )
 
     def __call__(self, *args: Any, stream: CudaStream | None = None) -> None:
-        print("__call__ args", args)
         # name: str,
         # args: KernelArgs = None,
         # *,
@@ -134,6 +144,30 @@ class CudaFunction:
         return nv_args
 
 
+class CudaCompilationError(Exception):
+    def __init__(self, msg: str, compilation_results: str, code: str, mod: CudaModule) -> None:
+        super().__init__(msg)
+        self.compilation_results = compilation_results
+        self.code = code
+        self.module = mod
+
+    def __str__(self) -> str:
+        err_str = super().__str__()
+        return f"{err_str}\n\nError: CUDA compilation results:\n{self.compilation_results}"
+
+
+class CudaCompilationWarning(UserWarning):
+    def __init__(self, msg: str, compilation_results: str, code: str, mod: CudaModule) -> None:
+        super().__init__(msg)
+        self.compilation_results = compilation_results
+        self.code = code
+        self.module = mod
+
+    def __str__(self) -> str:
+        err_str = super().__str__()
+        return f"{err_str}\n\Warning: CUDA compilation results:\n{self.compilation_results}"
+
+
 class CudaModule:
     """A CUDA source module"""
 
@@ -143,7 +177,7 @@ class CudaModule:
         code: str,
         *,
         no_extern: bool = False,
-        progname: str = "<unspecified>",
+        progname: str = "<<CudaModule>>",
         device: CudaDevice | None = None,
         stream: CudaStream | None = None,
     ) -> None:
@@ -155,6 +189,8 @@ class CudaModule:
         self.progname = progname
         if not no_extern:
             self.code = 'extern "C" {\n' + code + "\n}\n"
+        else:
+            self.code = code
         print(f"CODE:\n-------\n{self.code}\n-------\n")  # noqa: T201
 
         # Create program
@@ -168,14 +204,35 @@ class CudaModule:
         # opts = [b"--fmad=false", arch_arg]
         # ret = nvrtc.nvrtcCompileProgram(prog, len(opts), opts)
         compile_result = nvrtc.nvrtcCompileProgram(self.nv_prog, 0, [])
+
         log_sz = checkCudaErrors(nvrtc.nvrtcGetProgramLogSize(self.nv_prog))
         buf = b" " * log_sz
         checkCudaErrors(nvrtc.nvrtcGetProgramLog(self.nv_prog, buf))
         self.compile_log = buf.decode()
+
         if log_sz > 1:
             print(f"Compilation results ({log_sz} bytes): {self.compile_log}")  # noqa: T201
         else:
             print("Compilation complete, no warnings.")  # noqa: T201
+
+        if compile_result[0] == nvrtc.nvrtcResult.NVRTC_ERROR_COMPILATION:
+            raise CudaCompilationError(
+                f"Error while compiling code in '{progname}'",
+                self.compile_log,
+                self.code,
+                self,
+            )
+
+        if log_sz > 1:
+            warnings.warn(
+                CudaCompilationWarning(
+                    f"Warning while compiling code in '{progname}'",
+                    self.compile_log,
+                    self.code,
+                    self,
+                )
+            )
+
         checkCudaErrors(compile_result)
 
         # Get PTX from compilation
@@ -183,23 +240,21 @@ class CudaModule:
         self.ptx = b" " * self.nv_ptx_size
         checkCudaErrors(nvrtc.nvrtcGetPTX(self.nv_prog, self.ptx))
 
-    def get_function(self, name: str) -> CudaFunction:
-        init()
-
-        # Load PTX as module data and retrieve function
+        # Load PTX as module data
         self.ptx = np.char.array(self.ptx)
-        print("TODO: better checking here")
-        self.nv_module = checkCudaErrors(cuda.cuModuleLoadData(self.ptx.ctypes.data))
+        ret = cuda.cuModuleLoadData(self.ptx.ctypes.data)
+        self.nv_module = checkCudaErrors(ret)
 
-        print("returning cuda function")
+    def get_function(self, name: str) -> CudaFunction:
         return CudaFunction(self, name)
 
     def __getattr__(self, name: str) -> CudaFunction:
-        print("__getattr__")
         return self.get_function(name)
 
     # def __del__(self) -> None:
-    #     checkCudaErrors(cuda.cuModuleUnload(self.nv_module))
+    #     # if compile fails, the nv_module attribute hasn't been set het
+    #     if hasattr(self, "nv_module"):
+    #         checkCudaErrors(cuda.cuModuleUnload(self.nv_module))
 
     @staticmethod
     def from_file(filename: str) -> CudaModule:
