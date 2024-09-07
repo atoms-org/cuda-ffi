@@ -35,6 +35,8 @@ def init(flags: int = 0) -> None:
 
 class CudaStream:
     def __init__(self, flags: int = cuda.CUstream_flags.CU_STREAM_DEFAULT) -> None:
+        init()
+
         self.nv_stream: NvStream = checkCudaErrors(cuda.cuStreamCreate(flags))
 
     # def __del__(self) -> None:
@@ -53,13 +55,15 @@ class CudaStream:
     def get_default() -> CudaStream:
         global _default_stream
         if _default_stream is None:
-            raise CudaInitializationException("not initialized when trying to get default stream")
+            init()
+        assert _default_stream is not None
         return _default_stream
 
 
 class CudaContext:
     def __init__(self, dev: "CudaDevice") -> None:
         init()
+
         self.nv_context: NvContext = checkCudaErrors(cuda.cuCtxCreate(0, dev.nv_device))
 
     def __del__(self) -> None:
@@ -74,7 +78,8 @@ class CudaContext:
     def get_default() -> CudaContext:
         global _default_context
         if _default_context is None:
-            raise CudaInitializationException("not initialized when trying to get default context")
+            init()
+        assert _default_context is not None
         return _default_context
 
 
@@ -145,10 +150,11 @@ class CudaDevice:
         _default_device = dev
 
     @staticmethod
-    def default() -> CudaDevice:
+    def get_default() -> CudaDevice:
         global _default_device
         if _default_device is None:
-            _default_device = CudaDevice(0)
+            init()
+        assert _default_device is not None
         return _default_device
 
     @staticmethod
