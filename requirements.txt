@@ -1,1 +1,2 @@
-
+cuda-python==12.6.0 ; python_version >= "3.12" and python_version < "4.0"
+numpy==2.1.1 ; python_version >= "3.12" and python_version < "4.0"
