@@ -48,7 +48,7 @@ jobs:
   build:
     needs: lint
 
-    runs-on: apowers313-gpu
+    runs-on: cudaffi-gpu-runner
 
     strategy:
       matrix:
