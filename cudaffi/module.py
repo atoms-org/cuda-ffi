@@ -20,6 +20,8 @@ GridSpec = tuple[int, int, int]
 
 
 NvKernel = NewType("NvKernel", object)  # cuda.CUkernel
+# types:
+# https://docs.python.org/3/library/ctypes.html#ctypes-fundamental-data-types-2
 NvDataType = type[ctypes.c_uint] | type[ctypes.c_void_p]
 NvKernelArgs = (
     int  # for None args
@@ -52,7 +54,7 @@ class CudaData:
         self.type = datatype
 
 
-KernelArgs = CudaData | list[CudaData] | None
+# KernelArgs = CudaData | list[CudaData] | None
 
 
 class GridSpecCallback(Protocol):
@@ -95,7 +97,7 @@ class CudaFunction:
 
         print(f"Calling function: {self.__name__} with args: {args}")  # noqa: T201
 
-        nv_args = CudaFunction.make_args(*args)
+        nv_args = CudaFunction._make_args(*args)
 
         print("nv_args", nv_args)
 
@@ -127,7 +129,7 @@ class CudaFunction:
         )
 
     @staticmethod
-    def make_args(*args: Any) -> NvKernelArgs:
+    def _make_args(*args: Any) -> NvKernelArgs:
         if len(args) == 0:
             return 0
 
@@ -145,9 +147,17 @@ class CudaFunction:
 
 
 class CudaCompilationError(Exception):
-    def __init__(self, msg: str, compilation_results: str, code: str, mod: CudaModule) -> None:
+    def __init__(
+        self,
+        msg: str,
+        compilation_results: str,
+        code: str,
+        compilation_args: list[bytes],
+        mod: CudaModule,
+    ) -> None:
         super().__init__(msg)
         self.compilation_results = compilation_results
+        self.comilation_args = compilation_args
         self.code = code
         self.module = mod
 
@@ -172,12 +182,24 @@ class CudaModule:
     """A CUDA source module"""
 
     # TODO: include paths, compiler flags
+    # https://documen.tician.de/pycuda/driver.html#pycuda.compiler.SourceModule
+    # class pycuda.compiler.SourceModule(source, nvcc='nvcc', options=None,
+    # keep=False, no_extern_c=False, arch=None, code=None, cache_dir=None,
+    # include_dirs=[])
+    #
+    # arch and code specify the values to be passed for the -arch and -code
+    # options on the nvcc command line
+    #
+    # options=None
+    # include_dirs=[]
     def __init__(
         self,
         code: str,
         *,
-        no_extern: bool = False,
         progname: str = "<<CudaModule>>",
+        compile_options: list[str] | None = None,
+        include_dirs: list[str] | None = None,
+        no_extern: bool = False,
         device: CudaDevice | None = None,
         stream: CudaStream | None = None,
     ) -> None:
@@ -203,7 +225,11 @@ class CudaModule:
         # arch_arg = bytes(f"--gpu-architecture=compute_{major}{minor}", "ascii")
         # opts = [b"--fmad=false", arch_arg]
         # ret = nvrtc.nvrtcCompileProgram(prog, len(opts), opts)
-        compile_result = nvrtc.nvrtcCompileProgram(self.nv_prog, 0, [])
+        self.compile_args = CudaModule._make_compile_flags(compile_options, include_dirs)
+
+        compile_result = nvrtc.nvrtcCompileProgram(
+            self.nv_prog, len(self.compile_args), self.compile_args
+        )
 
         log_sz = checkCudaErrors(nvrtc.nvrtcGetProgramLogSize(self.nv_prog))
         buf = b" " * log_sz
@@ -215,14 +241,27 @@ class CudaModule:
         else:
             print("Compilation complete, no warnings.")  # noqa: T201
 
+        # check if the compiler didn't like the arguments
+        if compile_result[0] == nvrtc.nvrtcResult.NVRTC_ERROR_INVALID_OPTION:
+            raise CudaCompilationError(
+                f"Invalid compiler option(s) while compiling code in '{progname}'",
+                self.compile_log,
+                self.code,
+                self.compile_args,
+                self,
+            )
+
+        # check if compilation failed
         if compile_result[0] == nvrtc.nvrtcResult.NVRTC_ERROR_COMPILATION:
             raise CudaCompilationError(
                 f"Error while compiling code in '{progname}'",
                 self.compile_log,
                 self.code,
+                self.compile_args,
                 self,
             )
 
+        # check for any compiler output
         if log_sz > 1:
             warnings.warn(
                 CudaCompilationWarning(
@@ -244,6 +283,24 @@ class CudaModule:
         self.ptx = np.char.array(self.ptx)
         ret = cuda.cuModuleLoadData(self.ptx.ctypes.data)
         self.nv_module = checkCudaErrors(ret)
+
+    @staticmethod
+    def _make_compile_flags(
+        opts: list[str] | None,
+        include_dirs: list[str] | None,
+    ) -> list[bytes]:
+        ret: list[bytes] = []
+
+        if opts is not None:
+            for opt in opts:
+                ret.append(opt.encode())
+
+        if include_dirs is not None:
+            for incl in include_dirs:
+                ret.append("-I".encode())
+                ret.append(incl.encode())
+
+        return ret
 
     def get_function(self, name: str) -> CudaFunction:
         return CudaFunction(self, name)
