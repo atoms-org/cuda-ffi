@@ -1,8 +1,11 @@
+import ctypes
+
 import pytest
 
 from cudaffi.module import (
     CudaCompilationError,
     CudaCompilationWarning,
+    CudaData,
     CudaFunction,
     CudaFunctionNameNotFound,
     CudaModule,
@@ -56,7 +59,7 @@ class TestModule:
             """,
             compile_options=["--fmad=false"],
         )
-        assert len(mod.compile_args) == 1
+        assert len(mod.compile_args) == 2
         assert mod.compile_args[0] == b"--fmad=false"
 
     def test_include_paths(self) -> None:
@@ -70,9 +73,9 @@ class TestModule:
             """,
             include_dirs=["tests/helpers/include"],
         )
-        assert len(mod.compile_args) == 2
-        assert mod.compile_args[0] == b"-I"
-        assert mod.compile_args[1] == b"tests/helpers/include"
+        assert len(mod.compile_args) == 3
+        assert mod.compile_args[1] == b"-I"
+        assert mod.compile_args[2] == b"tests/helpers/include"
 
     def test_bad_compile_option(self) -> None:
         with pytest.raises(
@@ -117,3 +120,14 @@ class TestFunction:
         mod = CudaModule.from_file("tests/helpers/one_arg.cu")
         with pytest.raises(CudaFunctionNameNotFound):
             mod.doesnotexist(1)
+
+    def test_arg_type_string(self) -> None:
+        mod = CudaModule.from_file("tests/helpers/string_arg.cu")
+        mod.printstr("blah")
+
+
+class TestData:
+    def test_int(self) -> None:
+        d = CudaData(1)
+        assert d.data == 1
+        assert d.ctype == ctypes.c_uint
