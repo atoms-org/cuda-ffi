@@ -1,5 +1,7 @@
-from abc import ABCMeta, abstractmethod
-from typing import Any, NewType
+from __future__ import annotations
+
+from abc import ABC
+from typing import NewType
 
 from cuda import cuda, cudart
 
@@ -11,10 +13,21 @@ NvGraph = NewType("NvGraph", object)  # cuda.CUgraph
 NvGraphNode = NewType("NvGraphNode", object)  # cuda.CUgraphNode
 
 
-class GraphNode(metaclass=ABCMeta):
-    @abstractmethod
-    def __nv_mknode__(self, graph: Any) -> None:
-        pass
+class GraphNode(ABC):
+    def __init__(self, graph: CudaGraph, type_name: str) -> None:
+        self.name = type_name
+        self.graph = graph
+        self.nv_node: NvGraphNode | None = None
+
+    def depends_on(self, n: GraphNode) -> None:
+        assert self.nv_node is not None
+        assert n.nv_node is not None
+        print("self.nv_node", self.nv_node)
+        print("n.nv_node", n.nv_node)
+        checkCudaErrors(
+            cudart.cudaGraphAddDependencies(self.graph.nv_graph, [n.nv_node], [self.nv_node], 1)
+        )
+        # cudart.cudaGraphAddDependencies(self.graph.nv_graph, [self.nv_node], [n.nv_node], 1)
 
 
 class CudaGraph:
@@ -36,9 +49,17 @@ class CudaGraph:
 
         checkCudaErrors(cudart.cudaGraphLaunch(self.nv_graph_exec, self.stream.nv_stream))
 
-    def add_node(self, n: GraphNode) -> None:
-        self.nodes.append(n)
-        n.__nv_mknode__(self)
+        self.stream.synchronize()
+
+    def is_supported(self) -> bool:
+        # int driverVersion = 0;
+        # int deviceSupportsMemoryPools = 0;
+        # cudaDriverGetVersion(&driverVersion);
+        # if (driverVersion >= 11020) { ∕∕ avoid invalid value error in cudaDeviceGetAttribute
+        #     cudaDeviceGetAttribute(&deviceSupportsMemoryPools, cudaDevAttrMemoryPoolsSupported, device);
+        # }
+        # deviceSupportsMemoryNodes = (driverVersion >= 11040) && (deviceSupportsMemoryPools != 0);
+        return False
 
     # cuStreamBeginCaptureToGraph
     # instantiate()

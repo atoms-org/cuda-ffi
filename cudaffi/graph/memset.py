@@ -10,8 +10,9 @@ from .graph import CudaGraph, GraphNode
 NvMemsetNode = NewType("NvMemsetNode", object)
 
 
-class MemsetNode(GraphNode):
-    def __init__(self, mem: CudaMemory, value: int, size: int) -> None:
+class CudaMemsetNode(GraphNode):
+    def __init__(self, g: CudaGraph, mem: CudaMemory, value: int, size: int) -> None:
+        super().__init__(g, "Memset")
         self.size = size
         self.value = value
         self.nv_memset_node: NvMemsetNode | None = None
@@ -25,7 +26,6 @@ class MemsetNode(GraphNode):
         nv_memset_params.height = 1
         self.nv_memset_params = nv_memset_params
 
-    def __nv_mknode__(self, graph: CudaGraph) -> None:
-        self.nv_memset_node = checkCudaErrors(
-            cudart.cudaGraphAddMemsetNode(graph.nv_graph, None, 0, self.nv_memset_params)
+        self.nv_node = checkCudaErrors(
+            cudart.cudaGraphAddMemsetNode(self.graph.nv_graph, None, 0, self.nv_memset_params)
         )
