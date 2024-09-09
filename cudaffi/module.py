@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import warnings
+from enum import Enum
 
 """CUDA Source Modules"""
 
@@ -11,7 +12,8 @@ import numpy as np
 from cuda import cuda, nvrtc
 
 from .core import CudaDevice, CudaStream, init
-from .memory import CudaMemory, NvMemory
+from .datatypes import CudaDataType
+from .memory import CudaMemory
 from .utils import checkCudaErrors
 
 NvProgram = NewType("NvProgram", object)  # nvrtc.nvrtcGetProgram
@@ -22,7 +24,6 @@ GridSpec = tuple[int, int, int]
 NvKernel = NewType("NvKernel", object)  # cuda.CUkernel
 # types:
 # https://docs.python.org/3/library/ctypes.html#ctypes-fundamental-data-types-2
-NvDataType = type[ctypes.c_uint] | type[ctypes.c_void_p]
 NvKernelArgs = (
     int  # for None args
     | tuple[
@@ -36,25 +37,82 @@ class CudaDataException(Exception):
     pass
 
 
+NvDataType = type[ctypes.c_uint] | type[ctypes.c_void_p]
+
+
 class CudaData:
-    def __init__(self, data: int | CudaMemory, datatype: NvDataType | None = None) -> None:
-        match data:
-            case int():
-                print("data is int")
-                self.data: int | NvMemory = data
-            case CudaMemory():
-                print("data is CudaMemory")
-                self.data = data.nv_memory
-                datatype = ctypes.c_void_p
-            case _:
-                raise CudaDataException(f"can't convert data to CudaData: '{data}'")
+    def __init__(self, data: int | CudaMemory, type: str | None = None) -> None:
+        self.data: int
+        self.ctype: NvDataType
+        self.type: str
 
-        if datatype is None:
-            datatype = ctypes.c_uint
-        self.type = datatype
+        data_type_registry = CudaDataType.get_registry()
+        if type is not None:
+            if type not in data_type_registry:
+                raise Exception(f"'{type}' is not a registered data type")  # TODO
+            datatype = data_type_registry[type]
+
+            ret = datatype.convert(data, type)
+
+        for type in data_type_registry:
+            ret = data_type_registry[type].convert(data, type)
+            if ret is not None:
+                break
+
+        if ret is None:
+            raise Exception(f"data could not be converted to {type}")  # TODO
+
+        d, ct = ret
+        self.type = type
+        self.data = d
+        self.orig_data = data
+        self.ctype = ct
+        self.datatype = data_type_registry[type]
+
+        # TODO: allocate memory, direction, etc.
+
+        # self.data: int | str | NvMemory
+        # self.type: NvDataType
+        # match data:
+        #     case int():
+        #         print("data is int")
+        #         self.data = data
+        #         self.type = ctypes.c_uint
+        #     case str():
+        #         self.data = data
+        #         self.type = ctypes.c_void_p
+        #     case CudaMemory():
+        #         print("data is CudaMemory")
+        #         self.data = data.nv_memory
+        #         self.type = ctypes.c_void_p
+        #     case _:
+        #         raise CudaDataException(f"can't convert data to CudaData: '{data}'")
 
 
-# KernelArgs = CudaData | list[CudaData] | None
+class CudaArgDirection(Enum):
+    input = 1
+    output = 2
+    inout = 3
+
+
+class CudaArgType:
+    def __init__(
+        self,
+        name: str | None,
+        type: str | None = None,
+        direction: str = "inout",
+    ) -> None:
+        try:
+            self.direction = CudaArgDirection[direction]
+        except:
+            raise Exception(f"Invalid arg direction: '{direction}'")  # TODO
+
+        if type is None:
+            raise Exception("Unspecified arg type")  # TODO
+        self.type = type
+
+
+CudaArgTypeList = list[CudaArgType]
 
 
 class GridSpecCallback(Protocol):
@@ -78,42 +136,39 @@ class CudaFunction:
         # check for other errors
         checkCudaErrors(ret)
 
-        self.__nv_kernel__: NvKernel = ret[1]
-        self.__cuda_module__ = mod
-        self.__name__ = name
-        self.__default_grid__: GridSpecCallback | GridSpec = (1, 1, 1)
-        self.__default_block__: BlockSpecCallback | BlockSpec = (1, 1, 1)
+        self._nv_kernel: NvKernel = ret[1]
+        self._cuda_module = mod
+        self.name = name
+        self.arg_types: CudaArgTypeList | None = None
+        self._default_grid_fn: GridSpecCallback | None = None
+        self._default_grid: GridSpec = (1, 1, 1)
+        self._default_block_fn: BlockSpecCallback | None = None
+        self._default_block: BlockSpec = (1, 1, 1)
 
-    def __call__(self, *args: Any, stream: CudaStream | None = None) -> None:
-        # name: str,
-        # args: KernelArgs = None,
-        # *,
-        # block: BlockSpec = (1, 1, 1),
-        # grid: GridSpec = (1, 1, 1),
-        # stream: CudaStream | None = None,
-
+    def __call__(
+        self,
+        *args: Any,
+        grid: GridSpec | None = None,
+        block: BlockSpec | None = None,
+        stream: CudaStream | None = None,
+    ) -> None:
         if stream is None:
             stream = CudaStream.get_default()
 
-        print(f"Calling function: {self.__name__} with args: {args}")  # noqa: T201
+        print(f"Calling function: {self.name} with args: {args}")
 
         nv_args = CudaFunction._make_args(*args)
 
         print("nv_args", nv_args)
 
-        if isinstance(self.__default_grid__, tuple):
-            grid = self.__default_grid__
-        else:
-            grid = self.__default_grid__(self.__name__, self.__cuda_module__, *args)
-
-        if isinstance(self.__default_block__, tuple):
-            block = self.__default_block__
-        else:
-            block = self.__default_block__(self.__name__, self.__cuda_module__, *args)
+        if grid is None:
+            grid = self.get_default_grid(*args)
+        if block is None:
+            block = self.get_default_block(*args)
 
         checkCudaErrors(
             cuda.cuLaunchKernel(
-                self.__nv_kernel__,
+                self._nv_kernel,
                 grid[0],  # grid x dim
                 grid[1],  # grid y dim
                 grid[2],  # grid z dim
@@ -128,8 +183,20 @@ class CudaFunction:
             )
         )
 
+    def get_default_grid(self, *args: Any) -> GridSpec:
+        if self._default_grid_fn is not None:
+            return self._default_grid_fn(self.name, self._cuda_module, *args)
+        else:
+            return self._default_grid
+
+    def get_default_block(self, *args: Any) -> BlockSpec:
+        if self._default_block_fn is not None:
+            return self._default_block_fn(self.name, self._cuda_module, *args)
+        else:
+            return self._default_block
+
     @staticmethod
-    def _make_args(*args: Any) -> NvKernelArgs:
+    def _make_args(*args: Any, argtypes: CudaArgType | None = None) -> NvKernelArgs:
         if len(args) == 0:
             return 0
 
@@ -141,7 +208,7 @@ class CudaFunction:
                 converted_args.append(CudaData(arg))
 
         nv_data_args = tuple(arg.data for arg in converted_args)
-        nv_type_args = tuple(arg.type for arg in converted_args)
+        nv_type_args = tuple(arg.ctype for arg in converted_args)
         nv_args = (nv_data_args, nv_type_args)
         return nv_args
 
@@ -213,7 +280,6 @@ class CudaModule:
             self.code = 'extern "C" {\n' + code + "\n}\n"
         else:
             self.code = code
-        print(f"CODE:\n-------\n{self.code}\n-------\n")  # noqa: T201
 
         # Create program
         self.nv_prog: NvProgram = checkCudaErrors(
@@ -221,11 +287,10 @@ class CudaModule:
         )
 
         # Compile code
-        # Compile program
-        # arch_arg = bytes(f"--gpu-architecture=compute_{major}{minor}", "ascii")
-        # opts = [b"--fmad=false", arch_arg]
-        # ret = nvrtc.nvrtcCompileProgram(prog, len(opts), opts)
-        self.compile_args = CudaModule._make_compile_flags(compile_options, include_dirs)
+        major, minor = device.compute_capability
+        co = list() if compile_options is None else compile_options
+        co.append(f"--gpu-architecture=compute_{major}{minor}")
+        self.compile_args = CudaModule._make_compile_flags(co, include_dirs)
 
         compile_result = nvrtc.nvrtcCompileProgram(
             self.nv_prog, len(self.compile_args), self.compile_args
@@ -235,11 +300,6 @@ class CudaModule:
         buf = b" " * log_sz
         checkCudaErrors(nvrtc.nvrtcGetProgramLog(self.nv_prog, buf))
         self.compile_log = buf.decode()
-
-        if log_sz > 1:
-            print(f"Compilation results ({log_sz} bytes): {self.compile_log}")  # noqa: T201
-        else:
-            print("Compilation complete, no warnings.")  # noqa: T201
 
         # check if the compiler didn't like the arguments
         if compile_result[0] == nvrtc.nvrtcResult.NVRTC_ERROR_INVALID_OPTION:
