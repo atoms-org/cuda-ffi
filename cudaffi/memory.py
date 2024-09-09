@@ -14,7 +14,7 @@ NvMemory = NewType("NvMemory", object)  # cuda.CUdeviceptr
 class CudaMemory:
     def __init__(self, size: int, ctx: CudaContext | None = None) -> None:
         if ctx is None:
-            device = CudaDevice.default()
+            device = CudaDevice.get_default()
             ctx = device.default_context
 
         self.size = size
@@ -27,7 +27,7 @@ class CudaMemory:
     @staticmethod
     def from_np(arr: np.ndarray[Any, Any], *, stream: CudaStream | None = None) -> CudaMemory:
         if stream is None:
-            dev = CudaDevice.default()
+            dev = CudaDevice.get_default()
             stream = dev.default_stream
 
         num_bytes = len(arr) * arr.itemsize
