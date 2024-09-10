@@ -48,7 +48,7 @@ jobs:
   build:
     needs: lint
 
-    runs-on: "cirun-aws-runner--${{ github.run_id }}"
+    runs-on: [runs-on,runner=gpu-nvidia]
 
     strategy:
       matrix:
