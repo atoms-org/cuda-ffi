@@ -48,7 +48,7 @@ jobs:
   build:
     needs: lint
 
-    runs-on: cudaffi-gpu-runner
+    runs-on: codebuild-github-runner-cuda-ffi-${{ github.run_id }}-${{ github.run_attempt }}
 
     strategy:
       matrix:
