@@ -1,5 +1,6 @@
 runners:
   - name: "aws-runner"
+    region: "us-east-1"
     # Cloud Provider: AWS
     cloud: "aws"
     # Cheapest VM on AWS
