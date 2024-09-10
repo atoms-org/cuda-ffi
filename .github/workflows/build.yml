@@ -48,7 +48,7 @@ jobs:
   build:
     needs: lint
 
-    runs-on: codebuild-github-runner-cuda-ffi-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: "cirun-aws-runner--${{ github.run_id }}"
 
     strategy:
       matrix:
