@@ -6,7 +6,7 @@ runners:
     # Cheapest VM on AWS
     instance_type: "g4dn.xlarge"
     # Ubuntu-20.4, ami image
-    machine_image: "ami-06fd8a495a537da8b"
+    machine_image: "ami-0941204e80e0d464b"
     preemptible: false
     # Add this label in the "runs-on" param in .github/workflows/<workflow-name>.yml
     # So that this runner is created for running the workflow
