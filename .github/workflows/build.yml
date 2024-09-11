@@ -48,7 +48,12 @@ jobs:
   build:
     needs: lint
 
-    runs-on: codebuild-cuda-ffi-${{ github.run_id }}-${{ github.run_attempt }}
+    runs-on: cudaffi-gpu-runner
+    container:
+      image: ghcr.io/apowers313/roc-dev
+      env:
+        CUDA_HOME: /usr/local/cuda
+        LD_LIBRARY_PATH: /usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64
 
     strategy:
       matrix:
