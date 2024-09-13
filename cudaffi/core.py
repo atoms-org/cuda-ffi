@@ -32,6 +32,10 @@ def init(flags: int = 0) -> None:
         stream = CudaStream()
         CudaStream.set_default(stream)
 
+        from .datatypes import init as init_datatype
+
+        init_datatype()
+
 
 class CudaStream:
     def __init__(self, flags: int = cuda.CUstream_flags.CU_STREAM_DEFAULT) -> None:
