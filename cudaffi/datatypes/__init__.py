@@ -1,9 +1,9 @@
-from .base import CudaDataType
-from .int_type import CudaIntDataType
-from .memory_type import CudaMemoryDataType
+from ..memory import CudaDataType
 
 __all__ = ["CudaDataType"]
 
-CudaDataType
-CudaDataType.register("int", CudaIntDataType)
-CudaDataType.register("pointer", CudaMemoryDataType)
+
+def init() -> None:
+    from .str_type import CudaStrDataType
+
+    CudaDataType.register("str", CudaStrDataType, force=True)
