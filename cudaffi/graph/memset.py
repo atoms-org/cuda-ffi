@@ -18,7 +18,7 @@ class CudaMemsetNode(GraphNode):
         self.nv_memset_node: NvMemsetNode | None = None
 
         nv_memset_params = cudart.cudaMemsetParams()
-        nv_memset_params.dst = mem.nv_memory
+        nv_memset_params.dst = mem.dev_addr
         nv_memset_params.value = self.value
         # nv_memset_params.elementSize = np.dtype(np.float32).itemsize
         nv_memset_params.elementSize = np.dtype(np.uint8).itemsize

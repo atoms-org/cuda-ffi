@@ -3,10 +3,9 @@ from typing import NewType
 
 from cuda import cudart
 
-from ..memory import CudaMemory, NvMemory
+from ..memory import CudaMemory
 from ..utils import checkCudaErrors
 from .graph import CudaGraph, GraphNode
-from .malloc import CudaMemAddr
 
 NvMemcpyNode = NewType("NvMemcpyNode", object)
 
@@ -20,8 +19,8 @@ class CudaMemcpyNode(GraphNode):
     def __init__(
         self,
         g: CudaGraph,
-        src: CudaMemory | CudaMemAddr,
-        dst: CudaMemory | CudaMemAddr,
+        src: CudaMemory,
+        dst: CudaMemory,
         size: int,
         direction: str,
     ) -> None:
@@ -31,15 +30,9 @@ class CudaMemcpyNode(GraphNode):
         self.size = size
         self.direction = CopyDirection[direction]
 
-        if isinstance(self.src, CudaMemory):
-            self.nv_src: CudaMemAddr | NvMemory = self.src.nv_memory
-        else:
-            self.nv_src = self.src
-
-        if isinstance(self.dst, CudaMemory):
-            self.nv_dst: CudaMemAddr | NvMemory = self.dst.nv_memory
-        else:
-            self.nv_dst = self.dst
+        # TODO: make sure src and dst aren't host memory?
+        self.nv_src = self.src.dev_addr
+        self.nv_dst = self.dst.dev_addr
 
         self.nv_memcpy_node: NvMemcpyNode | None = None
 
