@@ -20,9 +20,9 @@ class CudaInitializationException(Exception):
     pass
 
 
-def init(flags: int = 0) -> None:
+def init(flags: int = 0, force: bool = False) -> None:
     global _initialized
-    if not _initialized:
+    if not _initialized or force:
         checkCudaErrors(cuda.cuInit(flags))
         _initialized = True
         dev = CudaDevice(0)
