@@ -1,11 +1,9 @@
-import ctypes
-
 import pytest
 
+from cudaffi.core import init
 from cudaffi.module import (
     CudaCompilationError,
     CudaCompilationWarning,
-    CudaData,
     CudaFunction,
     CudaFunctionNameNotFound,
     CudaModule,
@@ -93,6 +91,7 @@ class TestModule:
 
 class TestFunction:
     def test_basic(self) -> None:
+        init(force=True)
         mod = CudaModule(
             """
         __global__ void thingy() {
@@ -105,12 +104,14 @@ class TestFunction:
         mod.thingy()
 
     def test_from_file(self) -> None:
+        init(force=True)
         mod = CudaModule.from_file("tests/helpers/simple.cu")
         fn = mod.get_function("simple")
         assert isinstance(fn, CudaFunction)
         mod.simple()
 
     def test_one_arg(self) -> None:
+        init(force=True)
         mod = CudaModule.from_file("tests/helpers/one_arg.cu")
         fn = mod.get_function("one")
         assert isinstance(fn, CudaFunction)
@@ -124,10 +125,3 @@ class TestFunction:
     def test_arg_type_string(self) -> None:
         mod = CudaModule.from_file("tests/helpers/string_arg.cu")
         mod.printstr("blah")
-
-
-class TestData:
-    def test_int(self) -> None:
-        d = CudaData(1)
-        assert d.data == 1
-        assert d.ctype == ctypes.c_uint
