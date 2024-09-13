@@ -6,19 +6,24 @@ from enum import Enum
 """CUDA Source Modules"""
 
 import ctypes
-from typing import Any, NewType, Protocol
+from typing import TYPE_CHECKING, Any, NewType, Protocol, TypeAlias
 
 import numpy as np
 from cuda import cuda, nvrtc
 
 from .core import CudaDevice, CudaStream, init
-from .datatypes import CudaDataType
 from .memory import CudaMemory
 from .utils import checkCudaErrors
 
 NvProgram = NewType("NvProgram", object)  # nvrtc.nvrtcGetProgram
 BlockSpec = tuple[int, int, int]
 GridSpec = tuple[int, int, int]
+
+# XXX - https://mypy.readthedocs.io/en/stable/runtime_troubles.html#using-classes-that-are-generic-in-stubs-but-not-at-runtime
+if TYPE_CHECKING:
+    AnyCType: TypeAlias = type[ctypes._SimpleCData[Any]]
+else:
+    AnyCType: TypeAlias = ctypes._SimpleCData
 
 
 NvKernel = NewType("NvKernel", object)  # cuda.CUkernel
@@ -28,7 +33,7 @@ NvKernelArgs = (
     int  # for None args
     | tuple[
         tuple[Any, ...],  # list of data
-        tuple[Any, ...],  # list of data types
+        tuple[AnyCType, ...],  # list of data types
     ]
 )
 
@@ -38,55 +43,6 @@ class CudaDataException(Exception):
 
 
 NvDataType = type[ctypes.c_uint] | type[ctypes.c_void_p]
-
-
-class CudaData:
-    def __init__(self, data: int | CudaMemory, type: str | None = None) -> None:
-        self.data: int
-        self.ctype: NvDataType
-        self.type: str
-
-        data_type_registry = CudaDataType.get_registry()
-        if type is not None:
-            if type not in data_type_registry:
-                raise Exception(f"'{type}' is not a registered data type")  # TODO
-            datatype = data_type_registry[type]
-
-            ret = datatype.convert(data, type)
-
-        for type in data_type_registry:
-            ret = data_type_registry[type].convert(data, type)
-            if ret is not None:
-                break
-
-        if ret is None:
-            raise Exception(f"data could not be converted to {type}")  # TODO
-
-        d, ct = ret
-        self.type = type
-        self.data = d
-        self.orig_data = data
-        self.ctype = ct
-        self.datatype = data_type_registry[type]
-
-        # TODO: allocate memory, direction, etc.
-
-        # self.data: int | str | NvMemory
-        # self.type: NvDataType
-        # match data:
-        #     case int():
-        #         print("data is int")
-        #         self.data = data
-        #         self.type = ctypes.c_uint
-        #     case str():
-        #         self.data = data
-        #         self.type = ctypes.c_void_p
-        #     case CudaMemory():
-        #         print("data is CudaMemory")
-        #         self.data = data.nv_memory
-        #         self.type = ctypes.c_void_p
-        #     case _:
-        #         raise CudaDataException(f"can't convert data to CudaData: '{data}'")
 
 
 class CudaArgDirection(Enum):
@@ -200,15 +156,26 @@ class CudaFunction:
         if len(args) == 0:
             return 0
 
-        converted_args: list[CudaData] = []
+        converted_args: list[CudaMemory] = []
+        nv_data_args_list: list[Any] = []
+        nv_type_args_list: list[AnyCType] = []
         for arg in args:
-            if isinstance(arg, CudaData):
-                converted_args.append(arg)
+            if isinstance(arg, CudaMemory):
+                nv_data_args_list.append(arg.dev_addr)
+                nv_type_args_list.append(arg.ctype)
+            elif isinstance(arg, ctypes._SimpleCData):
+                nv_data_args_list.append(arg.value)
+                nv_type_args_list.append(arg.__class__)
+            elif isinstance(arg, int):
+                nv_data_args_list.append(arg)
+                nv_type_args_list.append(ctypes.c_int64)
             else:
-                converted_args.append(CudaData(arg))
+                mem = CudaMemory.from_any(arg)
+                nv_data_args_list.append(mem.dev_addr)
+                nv_type_args_list.append(mem.ctype)
 
-        nv_data_args = tuple(arg.data for arg in converted_args)
-        nv_type_args = tuple(arg.ctype for arg in converted_args)
+        nv_data_args = tuple(nv_data_args_list)
+        nv_type_args = tuple(nv_type_args_list)
         nv_args = (nv_data_args, nv_type_args)
         return nv_args
 
