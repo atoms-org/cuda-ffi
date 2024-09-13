@@ -1,56 +1,155 @@
 from __future__ import annotations
 
+import ctypes
+from abc import ABC, abstractmethod
 from typing import Any, NewType
 
-import numpy as np
-from cuda import cuda, cudart
+from cuda import cudart
 
-from .core import CudaContext, CudaDevice, CudaStream
+from .core import init
 from .utils import checkCudaErrors
 
-NvMemory = NewType("NvMemory", object)  # cuda.CUdeviceptr
+NvDeviceMemory = NewType("NvDeviceMemory", object)  # cuda.CUdeviceptr
+NvHostMemory = NewType("NvHostMemory", object)
+NvManagedMemory = NewType("NvManagedMemory", object)
 
 
-class CudaMemory:
-    def __init__(self, size: int, ctx: CudaContext | None = None) -> None:
-        if ctx is None:
-            device = CudaDevice.get_default()
-            ctx = device.default_context
+data_type_registry: DataTypeRegistry = {}
+AnyCType = type[ctypes.c_uint] | type[ctypes.c_void_p]
 
-        self.size = size
-        self.nv_memory: NvMemory = checkCudaErrors(cudart.cudaMalloc(size))
-        # self.nv_memory: NvMemory = checkCudaErrors(cuda.cuMemAlloc(size))
 
-    # def __del__(self) -> None:
-    #     checkCudaErrors(cuda.cuMemFree(self.nv_memory))
+class CudaDataType(ABC):
+    def __init__(self, name: str) -> None:
+        self.name = str
+
+    @abstractmethod
+    def convert(self, type: str, data: Any) -> CudaMemory | None: ...
 
     @staticmethod
-    def from_np(arr: np.ndarray[Any, Any], *, stream: CudaStream | None = None) -> CudaMemory:
-        if stream is None:
-            dev = CudaDevice.get_default()
-            stream = dev.default_stream
+    def register(name: str, DataType: type[CudaDataType], force: bool = False) -> None:
+        global data_type_registry
+        if name in data_type_registry and not force:
+            raise Exception(f"'{name}' already exists as a registered CudaDataType")
 
-        num_bytes = len(arr) * arr.itemsize
-        mem = CudaMemory(num_bytes)
-        # print("mem.nv_memory", mem.nv_memory)
-        # print("arr.ctypes.data", arr.ctypes.data)
-        # print("num_bytes", num_bytes)
-        # print("stream", stream)
-        checkCudaErrors(
-            cuda.cuMemcpyHtoDAsync(mem.nv_memory, arr.ctypes.data, num_bytes, stream.nv_stream)
-        )
+        data_type_registry[name] = DataType(name)
+
+    @staticmethod
+    def get_registry() -> DataTypeRegistry:
+        global data_type_registry
+        return data_type_registry
+
+
+DataTypeRegistry = dict[str, CudaDataType]
+
+
+class CudaMemory(ABC):
+    def __init__(self, size: int):
+        init()
+
+        self.size = size
+        self.ctype = ctypes.c_void_p
+
+    # allocates the memory
+
+    # @abstractmethod
+    # def set(self, dest_data: Any) -> None: ...
+
+    # copies from memory to the target destination using a datatype converter
+
+    # @abstractmethod
+    # def get(self, src_data: Any) -> None: ...
+
+    # copies data from src to this memory location using a datatype converter
+
+    # @abstractmethod
+    # def free(self) -> None: ...
+
+    # deallocates the memory
+
+    @property
+    @abstractmethod
+    def dev_addr(self) -> NvDeviceMemory | NvManagedMemory: ...
+
+    def copy_to(self, dst_mem: CudaMemory) -> None:
+        pass
+
+    # copies between memory locations
+
+    def copy_from(self, src_mem: CudaMemory) -> None:
+        pass
+
+    # copies between memory locations
+
+    @staticmethod
+    def memcpy(src: CudaMemory, dst: CudaMemory) -> None:
+        pass
+
+    @staticmethod
+    def from_any(data: Any, type: str | None = None) -> CudaMemory:
+        init()
+
+        mem: CudaMemory | None = None
+        data_type_registry = CudaDataType.get_registry()
+        if type is not None:
+            if type not in data_type_registry:
+                raise Exception(f"'{type}' is not a registered data type")  # TODO
+            datatype = data_type_registry[type]
+
+            mem = datatype.convert(data, type)
+
+        for type in data_type_registry:
+            mem = data_type_registry[type].convert(type, data)
+            if mem is not None:
+                break
+
+        if mem is None:
+            raise Exception(f"data could not be converted to '{type}'")  # TODO
+
+        # d, ct = ret
+        # self.type = type
+        # self.data = d
+        # self.orig_data = data
+        # self.ctype = ct
+        # self.datatype = data_type_registry[type]
 
         return mem
 
-    # cuda.cuMemcpy
-    # cuda.cuMemcpyHtoD
-    # cuda.cuMemcpyDtoH
 
-    # managed
-    # pagelocked
-    pass
-    # malloc
-    # to_device
-    # from_device
-    # free
-    # as_buffer
+class CudaHostMemory(CudaMemory):
+    def __init__(self, size: int) -> None:
+        super().__init__(size)
+
+        flags = cudart.cudaHostAllocDefault
+        self.nv_host_memory: NvHostMemory = checkCudaErrors(cudart.cudaHostAlloc(size, flags))
+        print("self.nv_host_memory", self.nv_host_memory.__class__)
+
+    @property
+    def dev_addr(self) -> NvDeviceMemory:
+        raise Exception("attempting to use host memory as device address")
+
+
+class CudaDeviceMemory(CudaMemory):
+    def __init__(self, size: int) -> None:
+        super().__init__(size)
+
+        self.nv_device_memory: NvDeviceMemory = checkCudaErrors(cudart.cudaMalloc(size))
+        print("self.nv_device_memory", self.nv_device_memory.__class__)
+
+    @property
+    def dev_addr(self) -> NvDeviceMemory:
+        return self.nv_device_memory
+
+
+class CudaManagedMemory(CudaMemory):
+    def __init__(self, size: int) -> None:
+        super().__init__(size)
+
+        flags = cudart.cudaMemAttachGlobal
+        self.nv_managed_memory: NvManagedMemory = checkCudaErrors(
+            cudart.cudaMallocManaged(size, flags)
+        )
+        print("self.nv_managed_memory", self.nv_managed_memory.__class__)
+
+    @property
+    def dev_addr(self) -> NvManagedMemory:
+        return self.nv_managed_memory
