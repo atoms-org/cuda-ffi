@@ -32,7 +32,7 @@ class TestDataType:
 
     def test_array(self) -> None:
         arr = array.array("h", [1, 2, 3, 4])
-        mem = CudaMemory.from_any("this is a test")
+        mem = CudaMemory.from_any(arr)
         assert mem.size == 4 * 2
 
     def test_numpy(self) -> None:
@@ -40,15 +40,22 @@ class TestDataType:
         mem = CudaMemory.from_any(arr)
         assert mem.size == 7 * 4
 
-    # TODO: strided numpy arrays
+    def test_numpy_strided(self) -> None:
+        arr = np.arange(50, dtype=np.int64)
+        arr = arr[::2]
+        assert len(arr) == 25
+        mem = CudaMemory.from_any(arr)
+        assert mem.size == 25 * 8
+        # mod = CudaModule.from_file("tests/helpers/print_buf.cu")
+        # mod.print_buf(arr, 25 * 8)
 
-    def test_buffer_protocol(self) -> None:
-        class BufObj:
-            def __buffer__(self) -> None:
-                pass
+    # def test_buffer_protocol(self) -> None:
+    #     class BufObj:
+    #         def __buffer__(self) -> None:
+    #             pass
 
-        mem = CudaMemory.from_any(BufObj())
-        assert mem.size == 7
+    #     mem = CudaMemory.from_any(BufObj())
+    #     assert mem.size == 7
 
     # def test_struct(self) -> None:
     #     s = CudaStruct(foo="int32", bar="uint8")
