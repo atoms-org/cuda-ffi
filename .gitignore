@@ -30,3 +30,6 @@ prof/
 
 # ignore site files
 site/
+
+# ignore unnamed jupyter files
+Untitled*.ipynb
