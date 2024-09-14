@@ -15,20 +15,26 @@ class CudaKernelNode(GraphNode):
         g: CudaGraph,
         fn: CudaFunction,
         *args: Any,
-        block: BlockSpec = (1, 1, 1),
-        grid: GridSpec = (1, 1, 1),
+        block: BlockSpec | None = None,
+        grid: GridSpec | None = None,
     ) -> None:
         super().__init__(g, "Kernel")
-        self.block = block
-        self.grid = grid
         self.fn = fn
         self.args = args
 
         print("args", args)
 
-        self.nv_args = CudaFunction._make_args(*args)
+        self.nv_args = CudaFunction._make_args(fn.arg_types, args)
 
         print("nv_args", self.nv_args)
+
+        if grid is None:
+            grid = fn.default_grid
+        if block is None:
+            block = fn.default_block
+
+        self.block = block
+        self.grid = grid
 
         nv_kernel_node_params = cuda.CUDA_KERNEL_NODE_PARAMS()
         nv_kernel_node_params.func = self.fn._nv_kernel
