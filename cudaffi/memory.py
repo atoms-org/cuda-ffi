@@ -6,6 +6,7 @@ from typing import Any, NewType
 
 from cuda import cudart
 
+from .args import CudaArgType
 from .core import init
 from .utils import checkCudaErrors
 
@@ -40,6 +41,13 @@ class CudaDataType(ABC):
 
 
 DataTypeRegistry = dict[str, CudaDataType]
+
+
+class CudaDataConversionError(Exception):
+    def __init__(self, data: Any, arg_type: CudaArgType | None, msg: str):
+        super().__init__(msg)
+        self.data = data
+        self.arg_type = arg_type
 
 
 class CudaMemory(ABC):
@@ -85,17 +93,18 @@ class CudaMemory(ABC):
         pass
 
     @staticmethod
-    def from_any(data: Any, type: str | None = None) -> CudaMemory:
+    def from_any(data: Any, arg_type: CudaArgType | None = None) -> CudaMemory:
         init()
 
         mem: CudaMemory | None = None
         data_type_registry = CudaDataType.get_registry()
-        if type is not None:
-            if type not in data_type_registry:
-                raise Exception(f"'{type}' is not a registered data type")  # TODO
-            datatype = data_type_registry[type]
+        if arg_type is not None:
+            arg_type_str = arg_type.type
+            if arg_type_str not in data_type_registry:
+                raise Exception(f"'{arg_type_str}' is not a registered data type")  # TODO
+            datatype = data_type_registry[arg_type_str]
 
-            mem = datatype.convert(data, type)
+            mem = datatype.convert(arg_type_str, data)
 
         for type in data_type_registry:
             mem = data_type_registry[type].convert(type, data)
@@ -103,14 +112,12 @@ class CudaMemory(ABC):
                 break
 
         if mem is None:
-            raise Exception(f"data could not be converted to '{type}'")  # TODO
-
-        # d, ct = ret
-        # self.type = type
-        # self.data = d
-        # self.orig_data = data
-        # self.ctype = ct
-        # self.datatype = data_type_registry[type]
+            if arg_type is not None:
+                raise CudaDataConversionError(
+                    data, arg_type, f"data could not be converted to '{arg_type.type}'"
+                )
+            else:
+                raise CudaDataConversionError(data, arg_type, f"converter not found for data")
 
         return mem
 

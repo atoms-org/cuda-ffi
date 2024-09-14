@@ -1,17 +1,20 @@
-# @staticmethod
-# def from_np(arr: numpy.ndarray, *, stream: CudaStream | None = None) -> CudaMemory:
-#     if stream is None:
-#         dev = CudaDevice.default()
-#         stream = dev.default_stream
+from typing import Any
 
-#     num_bytes = len(arr) * arr.itemsize
-#     mem = CudaMemory(num_bytes)
-#     # print("mem.nv_memory", mem.nv_memory)
-#     # print("arr.ctypes.data", arr.ctypes.data)
-#     # print("num_bytes", num_bytes)
-#     # print("stream", stream)
-#     checkCudaErrors(
-#         cuda.cuMemcpyHtoDAsync(mem.nv_memory, arr.ctypes.data, num_bytes, stream.nv_stream)
-#     )
+import numpy as np
+from cuda import cuda
 
-#     return mem
+from ..memory import CudaDataType, CudaDeviceMemory
+from ..utils import checkCudaErrors
+
+
+class CudaNumpyDataType(CudaDataType):
+    def convert(self, name: str, data: Any) -> CudaDeviceMemory | None:
+        if isinstance(data, np.ndarray):
+            # TODO: only make contiguous if it's not already
+            # you can check by seeing if arr.stride == arr.datasize
+            arr = np.ascontiguousarray(data)
+            mem = CudaDeviceMemory(arr.nbytes)
+            checkCudaErrors(cuda.cuMemcpyHtoD(mem.nv_device_memory, arr, arr.nbytes))
+            return mem
+
+        return None

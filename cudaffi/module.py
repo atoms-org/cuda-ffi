@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import warnings
-from enum import Enum
 
 """CUDA Source Modules"""
 
 import ctypes
-from typing import TYPE_CHECKING, Any, NewType, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Any, Callable, NewType, TypeAlias
 
 import numpy as np
 from cuda import cuda, nvrtc
 
+from .args import CudaArgSpecList, CudaArgType, CudaArgTypeList
 from .core import CudaDevice, CudaStream, init
 from .memory import CudaMemory
 from .utils import checkCudaErrors
@@ -45,45 +45,70 @@ class CudaDataException(Exception):
 NvDataType = type[ctypes.c_uint] | type[ctypes.c_void_p]
 
 
-class CudaArgDirection(Enum):
-    input = 1
-    output = 2
-    inout = 3
-
-
-class CudaArgType:
-    def __init__(
-        self,
-        name: str | None,
-        type: str | None = None,
-        direction: str = "inout",
-    ) -> None:
-        try:
-            self.direction = CudaArgDirection[direction]
-        except:
-            raise Exception(f"Invalid arg direction: '{direction}'")  # TODO
-
-        if type is None:
-            raise Exception("Unspecified arg type")  # TODO
-        self.type = type
-
-
-CudaArgTypeList = list[CudaArgType]
-
-
-class GridSpecCallback(Protocol):
-    def __call__(self, name: str, mod: CudaModule, *args: Any) -> GridSpec: ...
-
-
-class BlockSpecCallback(Protocol):
-    def __call__(self, name: str, mod: CudaModule, *args: Any) -> BlockSpec: ...
-
-
 class CudaFunctionNameNotFound(Exception):
     pass
 
 
+class DefaultBlockDescriptor:
+    def __set__(self, instance: CudaFunction, val: BlockSpec | BlockSpecCallback) -> None:
+        if isinstance(val, tuple):
+            instance._default_block = val
+        else:
+            instance._default_block_fn = val
+
+    def __get__(self, instance: CudaFunction, cls: type[CudaFunction]) -> BlockSpec:
+        if instance._default_block_fn is not None:
+            return instance._default_block_fn(
+                # TODO: not sure why mypy doesn't recognize CudaFunction attrs here
+                instance.name,  # type: ignore
+                instance._cuda_module,  # type: ignore
+                instance._current_args,
+            )
+        else:
+            return instance._default_block
+
+
+# TODO: block descriptor and grid descriptor could be one generic type
+class DefaultGridDescriptor:
+    def __set__(self, instance: CudaFunction, val: GridSpec | GridSpecCallback) -> None:
+        if isinstance(val, tuple):
+            instance._default_grid = val
+        else:
+            instance._default_grid_fn = val
+
+    def __get__(self, instance: CudaFunction, cls: type[CudaFunction]) -> GridSpec:
+        if instance._default_grid_fn is not None:
+            return instance._default_grid_fn(
+                # TODO: not sure why mypy doesn't recognize CudaFunction attrs here
+                instance.name,  # type: ignore
+                instance._cuda_module,  # type: ignore
+                instance._current_args,
+            )
+        else:
+            return instance._default_grid
+
+
+class ArgTypeDescriptor:
+    def __set__(self, instance: CudaFunction, arg_types: CudaArgSpecList) -> None:
+        arg_specs: CudaArgTypeList = list()
+        for n in range(len(arg_types)):
+            arg_type = arg_types[n]
+            if isinstance(arg_type, tuple):
+                spec = CudaArgType.from_tuple(arg_type, name=f"arg{n}")
+            else:
+                spec = CudaArgType(**arg_type)
+            arg_specs.append(spec)
+        self._arg_types = arg_specs
+
+    def __get__(self, instance: CudaFunction, cls: type[CudaFunction]) -> CudaArgTypeList | None:
+        return instance._arg_types
+
+
 class CudaFunction:
+    default_block = DefaultBlockDescriptor()
+    default_grid = DefaultGridDescriptor()
+    arg_types = ArgTypeDescriptor()
+
     def __init__(self, mod: CudaModule, name: str) -> None:
         ret = cuda.cuModuleGetFunction(mod.nv_module, name.encode())
         if ret[0] == cuda.CUresult.CUDA_ERROR_NOT_FOUND:
@@ -95,11 +120,12 @@ class CudaFunction:
         self._nv_kernel: NvKernel = ret[1]
         self._cuda_module = mod
         self.name = name
-        self.arg_types: CudaArgTypeList | None = None
+        self._arg_types: CudaArgTypeList | None = None
         self._default_grid_fn: GridSpecCallback | None = None
         self._default_grid: GridSpec = (1, 1, 1)
         self._default_block_fn: BlockSpecCallback | None = None
         self._default_block: BlockSpec = (1, 1, 1)
+        self._current_args: Any = None
 
     def __call__(
         self,
@@ -113,14 +139,14 @@ class CudaFunction:
 
         print(f"Calling function: {self.name} with args: {args}")
 
-        nv_args = CudaFunction._make_args(*args)
+        nv_args = CudaFunction._make_args(self.arg_types, args)
 
         print("nv_args", nv_args)
 
         if grid is None:
-            grid = self.get_default_grid(*args)
+            grid = self.default_grid
         if block is None:
-            block = self.get_default_block(*args)
+            block = self.default_block
 
         checkCudaErrors(
             cuda.cuLaunchKernel(
@@ -133,34 +159,41 @@ class CudaFunction:
                 block[2],  # block z dim
                 0,  # dynamic shared memory
                 stream.nv_stream,  # stream
-                #    args.ctypes.data,  # kernel arguments
                 nv_args,  # kernel arguments
                 0,  # extra (ignore)
             )
         )
 
-    def get_default_grid(self, *args: Any) -> GridSpec:
-        if self._default_grid_fn is not None:
-            return self._default_grid_fn(self.name, self._cuda_module, *args)
-        else:
-            return self._default_grid
+        self._current_args = None
 
-    def get_default_block(self, *args: Any) -> BlockSpec:
-        if self._default_block_fn is not None:
-            return self._default_block_fn(self.name, self._cuda_module, *args)
-        else:
-            return self._default_block
+        s = CudaStream.get_default()
+        s.synchronize()
+
+    def __repr__(self) -> str:
+        return f"{self._cuda_module.progname}:{self.name}:{hex(id(self))}"
+
+    def __str__(self) -> str:
+        return f"{self._cuda_module.progname}:{self.name}"
 
     @staticmethod
-    def _make_args(*args: Any, argtypes: CudaArgType | None = None) -> NvKernelArgs:
+    def _make_args(arg_types: CudaArgTypeList | None, args: tuple[Any, ...]) -> NvKernelArgs:
+        if arg_types is not None and len(args) != len(arg_types):
+            raise Exception("Wrong number of arguments")  # TODO
+
         if len(args) == 0:
             return 0
 
         converted_args: list[CudaMemory] = []
         nv_data_args_list: list[Any] = []
         nv_type_args_list: list[AnyCType] = []
-        for arg in args:
-            if isinstance(arg, CudaMemory):
+        for n in range(len(args)):
+            arg_type = None if arg_types is None else arg_types[n]
+            arg = args[n]
+            if arg_type is not None:
+                mem = CudaMemory.from_any(arg, arg_type)
+                nv_data_args_list.append(mem.dev_addr)
+                nv_type_args_list.append(mem.ctype)
+            elif isinstance(arg, CudaMemory):
                 nv_data_args_list.append(arg.dev_addr)
                 nv_type_args_list.append(arg.ctype)
             elif isinstance(arg, ctypes._SimpleCData):
@@ -215,17 +248,6 @@ class CudaCompilationWarning(UserWarning):
 class CudaModule:
     """A CUDA source module"""
 
-    # TODO: include paths, compiler flags
-    # https://documen.tician.de/pycuda/driver.html#pycuda.compiler.SourceModule
-    # class pycuda.compiler.SourceModule(source, nvcc='nvcc', options=None,
-    # keep=False, no_extern_c=False, arch=None, code=None, cache_dir=None,
-    # include_dirs=[])
-    #
-    # arch and code specify the values to be passed for the -arch and -code
-    # options on the nvcc command line
-    #
-    # options=None
-    # include_dirs=[]
     def __init__(
         self,
         code: str,
@@ -247,6 +269,8 @@ class CudaModule:
             self.code = 'extern "C" {\n' + code + "\n}\n"
         else:
             self.code = code
+
+        self.fn_cache: dict[str, CudaFunction] = {}
 
         # Create program
         self.nv_prog: NvProgram = checkCudaErrors(
@@ -330,7 +354,12 @@ class CudaModule:
         return ret
 
     def get_function(self, name: str) -> CudaFunction:
-        return CudaFunction(self, name)
+        if name in self.fn_cache:
+            return self.fn_cache[name]
+
+        fn = CudaFunction(self, name)
+        self.fn_cache[name] = fn
+        return fn
 
     def __getattr__(self, name: str) -> CudaFunction:
         return self.get_function(name)
@@ -345,3 +374,7 @@ class CudaModule:
         with open(filename) as f:
             code = f.read()
         return CudaModule(code=code, progname=filename)
+
+
+BlockSpecCallback = Callable[[str, CudaModule, tuple[Any, ...]], BlockSpec]
+GridSpecCallback = Callable[[str, CudaModule, tuple[Any, ...]], BlockSpec]

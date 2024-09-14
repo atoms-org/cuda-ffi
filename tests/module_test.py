@@ -1,7 +1,11 @@
+from typing import Any
+
 import pytest
 
 from cudaffi.core import init
+from cudaffi.memory import CudaDataConversionError
 from cudaffi.module import (
+    BlockSpec,
     CudaCompilationError,
     CudaCompilationWarning,
     CudaFunction,
@@ -88,17 +92,25 @@ class TestModule:
                 compile_options=["--thisisanoptionthatdoesnotexist"],
             )
 
+    def test_function_cache(self) -> None:
+        mod = CudaModule("""
+        __global__ void thingy() {
+          printf("this is a test\\n");
+        }
+        """)
+        thing1 = mod.thingy
+        thing2 = mod.thingy
+        assert thing1 is thing2
+
 
 class TestFunction:
     def test_basic(self) -> None:
         init(force=True)
-        mod = CudaModule(
-            """
+        mod = CudaModule("""
         __global__ void thingy() {
           printf("this is a test\\n");
         }
-        """
-        )
+        """)
         fn = mod.get_function("thingy")
         assert isinstance(fn, CudaFunction)
         mod.thingy()
@@ -122,6 +134,41 @@ class TestFunction:
         with pytest.raises(CudaFunctionNameNotFound):
             mod.doesnotexist(1)
 
+    def test_str(self) -> None:
+        mod = CudaModule.from_file("tests/helpers/simple.cu")
+        s = str(mod.simple)
+        assert s == "tests/helpers/simple.cu:simple"
+
+    def test_repr(self) -> None:
+        mod = CudaModule.from_file("tests/helpers/simple.cu")
+        s = repr(mod.simple)
+        print("s", s)
+        assert s.startswith("tests/helpers/simple.cu:simple:0x")
+
     def test_arg_type_string(self) -> None:
         mod = CudaModule.from_file("tests/helpers/string_arg.cu")
         mod.printstr("blah")
+
+    def test_default_block_tuple(self) -> None:
+        mod = CudaModule.from_file("tests/helpers/string_arg.cu")
+        mod.printstr.default_block = (1, 1, 1)
+
+    def test_default_block_fn(self) -> None:
+        mod = CudaModule.from_file("tests/helpers/string_arg.cu")
+
+        def default_block_fn(name: str, mod: CudaModule, args: Any) -> BlockSpec:
+            print("args", args)
+            return (1, 1, 1)
+
+        mod.printstr.default_block = default_block_fn
+
+    def test_simple_arg_types(self) -> None:
+        mod = CudaModule.from_file("tests/helpers/string_arg.cu")
+        mod.printstr.arg_types = [("input", "str")]
+        mod.printstr("whee")
+
+    def test_simple_bad_arg(self) -> None:
+        mod = CudaModule.from_file("tests/helpers/string_arg.cu")
+        mod.printstr.arg_types = [("input", "str")]
+        with pytest.raises(CudaDataConversionError, match="could not be converted to 'str'"):
+            mod.printstr(21)

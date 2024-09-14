@@ -10,3 +10,4 @@ class TestMemory:
 
     def test_managed(self) -> None:
         CudaManagedMemory(1)
+
