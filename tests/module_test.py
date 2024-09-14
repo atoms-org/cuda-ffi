@@ -93,11 +93,13 @@ class TestModule:
             )
 
     def test_function_cache(self) -> None:
-        mod = CudaModule("""
+        mod = CudaModule(
+            """
         __global__ void thingy() {
           printf("this is a test\\n");
         }
-        """)
+        """
+        )
         thing1 = mod.thingy
         thing2 = mod.thingy
         assert thing1 is thing2
@@ -106,11 +108,13 @@ class TestModule:
 class TestFunction:
     def test_basic(self) -> None:
         init(force=True)
-        mod = CudaModule("""
+        mod = CudaModule(
+            """
         __global__ void thingy() {
           printf("this is a test\\n");
         }
-        """)
+        """
+        )
         fn = mod.get_function("thingy")
         assert isinstance(fn, CudaFunction)
         mod.thingy()

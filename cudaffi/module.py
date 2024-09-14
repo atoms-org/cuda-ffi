@@ -166,8 +166,8 @@ class CudaFunction:
 
         self._current_args = None
 
-        s = CudaStream.get_default()
-        s.synchronize()
+        # s = CudaStream.get_default()
+        # s.synchronize()
 
     def __repr__(self) -> str:
         return f"{self._cuda_module.progname}:{self.name}:{hex(id(self))}"
