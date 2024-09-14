@@ -91,6 +91,7 @@ class DefaultGridDescriptor:
 class ArgTypeDescriptor:
     def __set__(self, instance: CudaFunction, arg_types: CudaArgSpecList) -> None:
         arg_specs: CudaArgTypeList = list()
+
         for n in range(len(arg_types)):
             arg_type = arg_types[n]
             if isinstance(arg_type, tuple):
@@ -98,7 +99,7 @@ class ArgTypeDescriptor:
             else:
                 spec = CudaArgType(**arg_type)
             arg_specs.append(spec)
-        self._arg_types = arg_specs
+        instance._arg_types = arg_specs
 
     def __get__(self, instance: CudaFunction, cls: type[CudaFunction]) -> CudaArgTypeList | None:
         return instance._arg_types
@@ -139,6 +140,7 @@ class CudaFunction:
 
         print(f"Calling function: {self.name} with args: {args}")
 
+        print("self.arg_types", self.arg_types)
         nv_args = CudaFunction._make_args(self.arg_types, args)
 
         print("nv_args", nv_args)
@@ -189,19 +191,25 @@ class CudaFunction:
         for n in range(len(args)):
             arg_type = None if arg_types is None else arg_types[n]
             arg = args[n]
+
+            # arg type was specified by argument types
             if arg_type is not None:
                 mem = CudaMemory.from_any(arg, arg_type)
                 nv_data_args_list.append(mem.dev_addr)
                 nv_type_args_list.append(mem.ctype)
+            # arg is CudaMemory type
             elif isinstance(arg, CudaMemory):
                 nv_data_args_list.append(arg.dev_addr)
                 nv_type_args_list.append(arg.ctype)
+            # arg is ctype data
             elif isinstance(arg, ctypes._SimpleCData):
                 nv_data_args_list.append(arg.value)
                 nv_type_args_list.append(arg.__class__)
+            # arg is raw int
             elif isinstance(arg, int):
                 nv_data_args_list.append(arg)
                 nv_type_args_list.append(ctypes.c_int64)
+            # don't know what arg is, try to convert it
             else:
                 mem = CudaMemory.from_any(arg)
                 nv_data_args_list.append(mem.dev_addr)
