@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import ctypes
 from abc import ABC, abstractmethod
-from typing import Any, NewType
+from collections.abc import Buffer
+from typing import Any, Generator, Generic, NewType, TypeVar
 
 from cuda import cudart
 
-from .args import CudaArgType
 from .core import init
 from .utils import checkCudaErrors
 
@@ -17,17 +17,32 @@ NvManagedMemory = NewType("NvManagedMemory", object)
 
 data_type_registry: DataTypeRegistry = {}
 AnyCType = type[ctypes.c_uint] | type[ctypes.c_void_p]
+DataType = TypeVar("DataType")
 
 
-class CudaDataType(ABC):
+class CudaDataType(ABC, Generic[DataType]):
     def __init__(self, name: str) -> None:
         self.name = str
 
     @abstractmethod
-    def convert(self, type: str, data: Any) -> CudaMemory | None: ...
+    def is_type(self, data: Any) -> bool: ...
+
+    @abstractmethod
+    def get_byte_size(self, data: DataType) -> int: ...
+
+    # @abstractmethod
+    # def get_host_ptr(self, data: DataType) -> int | Buffer: ...
+
+    @abstractmethod
+    def encode(self, data: DataType) -> BufferOrHostMem | int: ...
+
+    @abstractmethod
+    def decode(
+        self, data: DataType | None = None, size_hint: int | None = None
+    ) -> DataBufferOrGenerator: ...
 
     @staticmethod
-    def register(name: str, DataType: type[CudaDataType], force: bool = False) -> None:
+    def register(name: str, DataType: type[CudaDataType[Any]], force: bool = False) -> None:
         global data_type_registry
         if name in data_type_registry and not force:
             raise Exception(f"'{name}' already exists as a registered CudaDataType")
@@ -40,14 +55,7 @@ class CudaDataType(ABC):
         return data_type_registry
 
 
-DataTypeRegistry = dict[str, CudaDataType]
-
-
-class CudaDataConversionError(Exception):
-    def __init__(self, data: Any, arg_type: CudaArgType | None, msg: str):
-        super().__init__(msg)
-        self.data = data
-        self.arg_type = arg_type
+DataTypeRegistry = dict[str, CudaDataType[Any]]
 
 
 class CudaMemory(ABC):
@@ -92,35 +100,6 @@ class CudaMemory(ABC):
     def memcpy(src: CudaMemory, dst: CudaMemory) -> None:
         pass
 
-    @staticmethod
-    def from_any(data: Any, arg_type: CudaArgType | None = None) -> CudaMemory:
-        init()
-
-        mem: CudaMemory | None = None
-        data_type_registry = CudaDataType.get_registry()
-        if arg_type is not None:
-            arg_type_str = arg_type.type
-            if arg_type_str not in data_type_registry:
-                raise Exception(f"'{arg_type_str}' is not a registered data type")  # TODO
-            datatype = data_type_registry[arg_type_str]
-
-            mem = datatype.convert(arg_type_str, data)
-
-        for type in data_type_registry:
-            mem = data_type_registry[type].convert(type, data)
-            if mem is not None:
-                break
-
-        if mem is None:
-            if arg_type is not None:
-                raise CudaDataConversionError(
-                    data, arg_type, f"data could not be converted to '{arg_type.type}'"
-                )
-            else:
-                raise CudaDataConversionError(data, arg_type, f"converter not found for data")
-
-        return mem
-
 
 class CudaHostMemory(CudaMemory):
     def __init__(self, size: int) -> None:
@@ -160,3 +139,9 @@ class CudaManagedMemory(CudaMemory):
     @property
     def dev_addr(self) -> NvManagedMemory:
         return self.nv_managed_memory
+
+
+# TODO: should we support collections.abc.memoryview everywhere we support Buffer?
+BufferAndSize = tuple[Buffer, int]
+BufferOrHostMem = BufferAndSize | CudaHostMemory
+DataBufferOrGenerator = BufferOrHostMem | Generator[BufferOrHostMem, CudaDeviceMemory, Any]

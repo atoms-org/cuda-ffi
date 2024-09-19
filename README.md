@@ -29,7 +29,7 @@ mod.tryme("this is a test")
 ``` python
 from cudaffi import CudaModule
 
-mod = CudaModule.from_file("""
+mod = CudaModule("""
 __global__ void multiply_them(float *dest, float *a, float *b)
 {
   const int i = threadIdx.x;
@@ -53,16 +53,16 @@ mod.multiply_them(out, a, b, block=(400,1,1), grid=(1,1,1))
 
 ## Optional Validation, Automatic Block & Grid Size, Return Types
 ``` python
+# use 'autoout' and specify size to automatically allocate and convert return results in the desired format
+mod.multiply_them.arg_types = [("output", "numpy": lambda args: arg1[1].size), ("input", "numpy"), ("input", "numpy")]
+
 # validate that the input arrays have the same shape
 mod.multiply_them.validate_args = lambda args: args[1].shape == args[2].shape
 
 # default CUDA block size is the size of the input array
 mod.multiply_them.default_block = lambda args: (args[1].size, 1, 1)
 
-# automatically create the return type for the user
-mod.multiply_them.return_type = lambda args: numpy.zeros_like(args[1])
-
-# return type created automatically
+# return type created automatically from autoout... if multiple autoouts are defined, a tuple of results is returned
 out = mod.multiply_them(a, b)
 ```
 
@@ -70,11 +70,10 @@ out = mod.multiply_them(a, b)
 ``` python
 from cudaffi import CudaModule, CudaGraph
 
-mod = CudaModule.load_file("test.cu")
+mod = CudaModule.load_file("test_graph.cu")
 mod.start_ker.arg_types = [("input", "numpy"), ("output", "bytes"), ("output", "int32")]
 mod.middle_ker.arg_types = [("input", "bytes"), ("input", "int32"), ("output", "bytes"), ("output", "int16")]
 mod.end_ker.arg_types = [("input", "bytes"), ("input", "int16"), ("output", "int16")]
-
 
 CudaGraph.start(mod.start_ker)
 ```
@@ -94,3 +93,6 @@ d = CudaDevice.get_default()
 s = CudaStream.get_default()
 ctx = CudaContext.get_default()
 ```
+
+## Adding New DataTypes
+See `cudaffi/datatypes/*.py` for examples

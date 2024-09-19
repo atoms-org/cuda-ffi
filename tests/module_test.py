@@ -2,8 +2,8 @@ from typing import Any
 
 import pytest
 
+from cudaffi.args import CudaDataConversionError
 from cudaffi.core import init
-from cudaffi.memory import CudaDataConversionError
 from cudaffi.module import (
     BlockSpec,
     CudaCompilationError,
@@ -176,3 +176,8 @@ class TestFunction:
         mod.printstr.arg_types = [("input", "str")]
         with pytest.raises(CudaDataConversionError, match="could not be converted to 'str'"):
             mod.printstr(21)
+
+    def test_strin_strout(self) -> None:
+        mod = CudaModule.from_file("tests/helpers/strstr.cu")
+        ba = bytearray(1024)
+        mod.strstr("input string", bytearray)

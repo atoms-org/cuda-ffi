@@ -6,15 +6,20 @@ from cuda import cuda
 from ..memory import CudaDataType, CudaDeviceMemory
 from ..utils import checkCudaErrors
 
+AnyNpArray = np.ndarray[Any, Any]
 
-class CudaNumpyDataType(CudaDataType):
-    def convert(self, name: str, data: Any) -> CudaDeviceMemory | None:
-        if isinstance(data, np.ndarray):
-            # TODO: only make contiguous if it's not already
-            # you can check by seeing if arr.stride == arr.datasize
-            arr = np.ascontiguousarray(data)
-            mem = CudaDeviceMemory(arr.nbytes)
-            checkCudaErrors(cuda.cuMemcpyHtoD(mem.nv_device_memory, arr, arr.nbytes))
-            return mem
+
+class CudaNumpyDataType(CudaDataType[AnyNpArray]):
+    def is_type(self, data: Any) -> bool:
+        return isinstance(data, np.ndarray)
+
+    def get_size(self, data: AnyNpArray) -> int:
+        return data.nbytes
+
+    def to_device(self, src: AnyNpArray, dst: CudaDeviceMemory) -> None:
+        checkCudaErrors(cuda.cuMemcpyHtoD(dst.nv_device_memory, src.ctypes.data, src.nbytes))
+
+    def to_host(self, src: CudaDeviceMemory, dst: AnyNpArray) -> None:
+        checkCudaErrors(cuda.cuMemcpyDtoH(dst.ctypes.data, src.nv_device_memory, dst.nbytes))
 
         return None

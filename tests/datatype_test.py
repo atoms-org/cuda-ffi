@@ -3,6 +3,7 @@ from typing import Any
 
 import numpy as np
 
+from cudaffi.args import CudaArg
 from cudaffi.datatypes import CudaDataType
 from cudaffi.memory import CudaMemory
 
@@ -17,34 +18,34 @@ class TestDataType:
         CudaTestDataType("test")
 
     def test_str(self) -> None:
-        mem = CudaMemory.from_any("this is a test")
+        mem = CudaArg.from_any("this is a test")
         assert mem.size == 15
 
     def test_bytes(self) -> None:
         b = bytes([1, 3, 5, 7, 9])
-        mem = CudaMemory.from_any(b)
+        mem = CudaArg.from_any(b)
         assert mem.size == 5
 
     def test_bytearray(self) -> None:
         barr = bytearray([1, 2, 3, 4, 5, 6, 7])
-        mem = CudaMemory.from_any(barr)
+        mem = CudaArg.from_any(barr)
         assert mem.size == 7
 
     def test_array(self) -> None:
         arr = array.array("h", [1, 2, 3, 4])
-        mem = CudaMemory.from_any(arr)
+        mem = CudaArg.from_any(arr)
         assert mem.size == 4 * 2
 
     def test_numpy(self) -> None:
         arr = np.array([1, 1, 2, 3, 5, 8, 13], dtype=np.int32)
-        mem = CudaMemory.from_any(arr)
+        mem = CudaArg.from_any(arr)
         assert mem.size == 7 * 4
 
     def test_numpy_strided(self) -> None:
         arr = np.arange(50, dtype=np.int64)
         arr = arr[::2]
         assert len(arr) == 25
-        mem = CudaMemory.from_any(arr)
+        mem = CudaArg.from_any(arr)
         assert mem.size == 25 * 8
         # mod = CudaModule.from_file("tests/helpers/print_buf.cu")
         # mod.print_buf(arr, 25 * 8)

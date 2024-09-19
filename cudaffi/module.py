@@ -5,37 +5,19 @@ import warnings
 """CUDA Source Modules"""
 
 import ctypes
-from typing import TYPE_CHECKING, Any, Callable, NewType, TypeAlias
+from typing import Any, Callable, NewType
 
 import numpy as np
 from cuda import cuda, nvrtc
 
-from .args import CudaArgSpecList, CudaArgType, CudaArgTypeList
+from .args import CudaArgList, CudaArgSpecList, CudaArgType, CudaArgTypeList
 from .core import CudaDevice, CudaStream, init
-from .memory import CudaMemory
 from .utils import checkCudaErrors
 
 NvProgram = NewType("NvProgram", object)  # nvrtc.nvrtcGetProgram
 BlockSpec = tuple[int, int, int]
 GridSpec = tuple[int, int, int]
-
-# XXX - https://mypy.readthedocs.io/en/stable/runtime_troubles.html#using-classes-that-are-generic-in-stubs-but-not-at-runtime
-if TYPE_CHECKING:
-    AnyCType: TypeAlias = type[ctypes._SimpleCData[Any]]
-else:
-    AnyCType: TypeAlias = ctypes._SimpleCData
-
-
 NvKernel = NewType("NvKernel", object)  # cuda.CUkernel
-# types:
-# https://docs.python.org/3/library/ctypes.html#ctypes-fundamental-data-types-2
-NvKernelArgs = (
-    int  # for None args
-    | tuple[
-        tuple[Any, ...],  # list of data
-        tuple[AnyCType, ...],  # list of data types
-    ]
-)
 
 
 class CudaDataException(Exception):
@@ -140,8 +122,9 @@ class CudaFunction:
 
         print(f"Calling function: {self.name} with args: {args}")
 
-        print("self.arg_types", self.arg_types)
-        nv_args = CudaFunction._make_args(self.arg_types, args)
+        arg_list = CudaArgList(args, self.arg_types)
+        arg_list.to_device()
+        nv_args = arg_list.to_nv_args()
 
         print("nv_args", nv_args)
 
@@ -168,57 +151,17 @@ class CudaFunction:
 
         self._current_args = None
 
-        # s = CudaStream.get_default()
-        # s.synchronize()
+        arg_list.to_host()
+
+        # TODO
+        s = CudaStream.get_default()
+        s.synchronize()
 
     def __repr__(self) -> str:
         return f"{self._cuda_module.progname}:{self.name}:{hex(id(self))}"
 
     def __str__(self) -> str:
         return f"{self._cuda_module.progname}:{self.name}"
-
-    @staticmethod
-    def _make_args(arg_types: CudaArgTypeList | None, args: tuple[Any, ...]) -> NvKernelArgs:
-        if arg_types is not None and len(args) != len(arg_types):
-            raise Exception("Wrong number of arguments")  # TODO
-
-        if len(args) == 0:
-            return 0
-
-        converted_args: list[CudaMemory] = []
-        nv_data_args_list: list[Any] = []
-        nv_type_args_list: list[AnyCType] = []
-        for n in range(len(args)):
-            arg_type = None if arg_types is None else arg_types[n]
-            arg = args[n]
-
-            # arg type was specified by argument types
-            if arg_type is not None:
-                mem = CudaMemory.from_any(arg, arg_type)
-                nv_data_args_list.append(mem.dev_addr)
-                nv_type_args_list.append(mem.ctype)
-            # arg is CudaMemory type
-            elif isinstance(arg, CudaMemory):
-                nv_data_args_list.append(arg.dev_addr)
-                nv_type_args_list.append(arg.ctype)
-            # arg is ctype data
-            elif isinstance(arg, ctypes._SimpleCData):
-                nv_data_args_list.append(arg.value)
-                nv_type_args_list.append(arg.__class__)
-            # arg is raw int
-            elif isinstance(arg, int):
-                nv_data_args_list.append(arg)
-                nv_type_args_list.append(ctypes.c_int64)
-            # don't know what arg is, try to convert it
-            else:
-                mem = CudaMemory.from_any(arg)
-                nv_data_args_list.append(mem.dev_addr)
-                nv_type_args_list.append(mem.ctype)
-
-        nv_data_args = tuple(nv_data_args_list)
-        nv_type_args = tuple(nv_type_args_list)
-        nv_args = (nv_data_args, nv_type_args)
-        return nv_args
 
 
 class CudaCompilationError(Exception):
