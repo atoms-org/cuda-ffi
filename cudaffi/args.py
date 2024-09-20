@@ -1,11 +1,22 @@
 from __future__ import annotations
 
-import ctypes
+from collections.abc import Buffer
 from enum import Enum
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import Any
 
-from .core import init
-from .memory import CudaDataType, CudaDeviceMemory, CudaMemory, NvDeviceMemory, NvManagedMemory
+from cuda import cuda
+
+from .core import CudaStream, init
+from .memory import (
+    AnyCType,
+    CudaDataType,
+    CudaDeviceMemory,
+    CudaHostMemory,
+    NvDeviceMemory,
+    NvHostMemory,
+    NvManagedMemory,
+)
+from .utils import checkCudaErrors
 
 
 class CudaArgDirection(Enum):
@@ -45,12 +56,6 @@ CudaArgTypeList = list[CudaArgType]
 CudaArgSpec = dict[str, Any] | CudaSimpleArg
 CudaArgSpecList = list[CudaArgSpec]
 
-# XXX - https://mypy.readthedocs.io/en/stable/runtime_troubles.html#using-classes-that-are-generic-in-stubs-but-not-at-runtime
-if TYPE_CHECKING:
-    AnyCType: TypeAlias = type[ctypes._SimpleCData[Any]]
-else:
-    AnyCType: TypeAlias = ctypes._SimpleCData
-
 NvKernelArgs = (
     int  # for None args
     | tuple[
@@ -74,17 +79,22 @@ class CudaArg:
         arg_type: CudaArgType | None = None,
         # data_type: CudaDataType[Any] | None = None,
     ) -> None:
-        self.arg_type = arg_type
+        init()
+
+        self.specified_type = arg_type
         self.data = data
         self.nv_data: int | NvDeviceMemory | NvManagedMemory
         self.ctype: AnyCType
-        self.mem: CudaMemory | None
+        self.data_type: CudaDataType[Any]
+        self.direction: CudaArgDirection = (
+            arg_type.direction if arg_type is not None else CudaArgDirection["inout"]
+        )
 
-        init()
-
-        # find the arg datatype
+        # find the datatype
         final_type_str: str | None = None
         data_type_registry = CudaDataType.get_registry()
+
+        # we have a desired arg datatype
         if arg_type is not None:
             arg_type_str = arg_type.type
             if arg_type_str not in data_type_registry:
@@ -94,6 +104,7 @@ class CudaArg:
             if datatype.is_type(data):
                 final_type_str = arg_type.type
 
+        # no desired type, try all of them
         for type in data_type_registry:
             if data_type_registry[type].is_type(data):
                 final_type_str = type
@@ -107,34 +118,47 @@ class CudaArg:
             else:
                 raise CudaDataConversionError(data, arg_type, f"converter not found for data")
 
-        final_type = data_type_registry[final_type_str]
-        # arg type was specified by argument types
-        if arg_type is not None:
-            mem = CudaDeviceMemory(final_type.get_byte_size(data))
-            self.nv_data = mem.dev_addr
-            self.ctype = mem.ctype
-        # arg is CudaMemory type
-        elif isinstance(data, CudaMemory):
-            self.nv_data = data.dev_addr
-            self.ctype = data.ctype
-        # arg is ctype data
-        elif isinstance(data, ctypes._SimpleCData):
-            self.nv_data = data.value
-            self.ctype = data.__class__
-        # arg is raw int
-        elif isinstance(data, int):
-            self.nv_data = data
-            self.ctype = ctypes.c_int64
-        # don't know what arg is, try to convert it
+        self.data_type = data_type_registry[final_type_str]
+        self.ctype = self.data_type.get_ctype(data)
+        self.is_pointer = self.ctype.__name__.endswith("_p")
+        self.dev_mem: CudaDeviceMemory | None = None
+        self.byte_size = self.data_type.get_byte_size(data)
+
+        if self.is_pointer:
+            self.dev_mem = CudaDeviceMemory(self.byte_size)
+            self.nv_data = self.dev_mem.nv_device_memory
         else:
-            mem = CudaDeviceMemory(final_type.get_byte_size(data))
-            self.nv_data = mem.dev_addr
-            self.ctype = mem.ctype
+            self.nv_data = data
 
-    def to_device(self) -> None:
-        pass
+    def copy_to_device(self, stream: CudaStream | None = None) -> None:
+        if not self.is_pointer:
+            return
 
-    def to_host(self) -> None:
+        if stream is None:
+            stream = CudaStream.get_default()
+
+        assert self.dev_mem is not None
+
+        enc_data = self.data_type.encode(self.data)
+        data: int | NvHostMemory | Buffer
+        if isinstance(enc_data, CudaHostMemory):
+            data = enc_data.nv_host_memory
+        elif isinstance(enc_data, int):
+            data = enc_data
+        else:
+            data = enc_data[0]
+        print("data", data)
+
+        checkCudaErrors(
+            cuda.cuMemcpyHtoDAsync(
+                self.dev_mem.nv_device_memory,
+                data,
+                self.byte_size,
+                stream.nv_stream,
+            )
+        )
+
+    def copy_to_host(self) -> None:
         pass
 
 
@@ -149,17 +173,29 @@ class CudaArgList:
             arg_type = arg_types[n] if arg_types is not None else None
             self.args.append(CudaArg(arg, arg_type))
 
-    def to_device(self) -> None:
-        pass
+    def copy_to_device(self) -> None:
+        for arg in self.args:
+            if arg.direction == CudaArgDirection.input or arg.direction == CudaArgDirection.inout:
+                arg.copy_to_device()
 
-    def to_host(self) -> None:
+    def copy_to_host(self) -> None:
+        # for arg in self.args:
         pass
 
     def to_nv_args(self) -> NvKernelArgs:
         if len(self.args) == 0:
             return 0
 
-        nv_data_args = tuple([arg.nv_data for arg in self.args])
-        nv_type_args = tuple([arg.ctype for arg in self.args])
-        nv_args = (nv_data_args, nv_type_args)
+        # nv_data_args = tuple([arg.nv_data for arg in self.args])
+        # nv_type_args = tuple([arg.ctype for arg in self.args])
+        nv_data_args: list[Any] = []
+        nv_type_args: list[Any] = []
+        for arg in self.args:
+            nv_data_args.append(arg.nv_data)
+            print("adding arg", arg.nv_data)
+            nv_type_args.append(arg.ctype)
+
+        print("nv_data_args", nv_data_args)
+        nv_args = (tuple(nv_data_args), tuple(nv_type_args))
+        # nv_args = (nv_data_args, nv_type_args)
         return nv_args

@@ -123,10 +123,11 @@ class CudaFunction:
         print(f"Calling function: {self.name} with args: {args}")
 
         arg_list = CudaArgList(args, self.arg_types)
-        arg_list.to_device()
+        arg_list.copy_to_device()
         nv_args = arg_list.to_nv_args()
-
+        assert not isinstance(nv_args, int)
         print("nv_args", nv_args)
+        print("type nvargs[0]", type(nv_args[0]))
 
         if grid is None:
             grid = self.default_grid
@@ -151,7 +152,7 @@ class CudaFunction:
 
         self._current_args = None
 
-        arg_list.to_host()
+        arg_list.copy_to_host()
 
         # TODO
         s = CudaStream.get_default()

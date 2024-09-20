@@ -146,7 +146,6 @@ class TestFunction:
     def test_repr(self) -> None:
         mod = CudaModule.from_file("tests/helpers/simple.cu")
         s = repr(mod.simple)
-        print("s", s)
         assert s.startswith("tests/helpers/simple.cu:simple:0x")
 
     def test_arg_type_string(self) -> None:

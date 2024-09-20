@@ -1,32 +1,29 @@
-from collections.abc import Buffer
 from typing import Any
 
-from cuda import cuda
-
-from ..memory import CudaDataType, CudaDeviceMemory
-from ..utils import checkCudaErrors
+from ..memory import CudaDataType, PointerOrHostMem, PointerOrPointerGenerator
 
 
-class CudaBytesDataType(CudaDataType):
+class CudaBytesDataType(CudaDataType[bytes]):
     def is_type(self, data: Any) -> bool:
         return isinstance(data, bytes)
 
-    def get_size(self, data: bytes) -> int:
+    def get_byte_size(self, data: bytes) -> int:
         return len(data)
 
-    def get_ptr(self, data: bytes) -> Buffer:
-        return data
+    def encode(self, data: bytes) -> PointerOrHostMem | int:
+        return (data, len(data))
 
-    def to_device(self, src: bytes, dst: CudaDeviceMemory) -> None:
-        checkCudaErrors(cuda.cuMemcpyHtoD(dst.nv_device_memory, src, len(src)))
+    def decode(
+        self, data: bytes | None = None, size_hint: int | None = None
+    ) -> PointerOrPointerGenerator[bytes]:
+        if data is not None:
+            raise Exception("the type 'bytes' is immutable, cannot read into bytes")
 
-    def to_host(self, src: CudaDeviceMemory, dst: bytes) -> None:
-        checkCudaErrors(cuda.cuMemcpyDtoH(dst, src.nv_device_memory, len(dst)))
+        if size_hint is None:
+            raise Exception("bytes needs size_hint for output")
 
-    def convert(self, name: str, data: Any) -> CudaDeviceMemory | None:
-        if isinstance(data, bytes):
-            mem = CudaDeviceMemory(len(data))
-            checkCudaErrors(cuda.cuMemcpyHtoD(mem.nv_device_memory, data, len(data)))
-            return mem
+        ba = bytearray(size_hint)
 
-        return None
+        yield (ba, size_hint)
+
+        return bytes(ba)

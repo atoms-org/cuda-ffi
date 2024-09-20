@@ -1,7 +1,8 @@
+import ctypes
 from collections.abc import Buffer
 from typing import Any
 
-from ..memory import CudaDataType, DataBufferOrGenerator
+from ..memory import AnyCType, CudaDataType, PointerOrPointerGenerator
 
 
 class CudaStrDataType(CudaDataType[str]):
@@ -11,15 +12,19 @@ class CudaStrDataType(CudaDataType[str]):
     def get_byte_size(self, data: str) -> int:
         return len(data) + 1
 
+    def get_ctype(self, data: str) -> AnyCType:
+        return ctypes.c_void_p
+
     def encode(self, data: str) -> tuple[Buffer, int]:
         s = bytearray(data.encode())
         s.append(0)
 
+        print("str encode returning", s)
         return (s, len(data) + 1)
 
     def decode(
         self, data: str | None = None, size_hint: int | None = None
-    ) -> DataBufferOrGenerator:
+    ) -> PointerOrPointerGenerator[str]:
         if size_hint is None or size_hint < 1:
             size_hint = 4096
 

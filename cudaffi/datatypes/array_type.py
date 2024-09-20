@@ -1,18 +1,27 @@
-import array
+from array import array
 from typing import Any
 
-from cuda import cuda
+from ..memory import CudaDataType, PointerOrHostMem, PointerOrPointerGenerator
 
-from ..memory import CudaDataType, CudaDeviceMemory
-from ..utils import checkCudaErrors
+AnyArray = array[Any]
 
 
-class CudaArrayDataType(CudaDataType):
-    def convert(self, name: str, data: Any) -> CudaDeviceMemory | None:
-        if isinstance(data, array.array):
-            sz = data.itemsize * len(data)
-            mem = CudaDeviceMemory(sz)
-            checkCudaErrors(cuda.cuMemcpyHtoD(mem.nv_device_memory, data, sz))
-            return mem
+class CudaArrayDataType(CudaDataType[AnyArray]):
+    def is_type(self, data: Any) -> bool:
+        return isinstance(data, bytearray)
 
-        return None
+    def get_byte_size(self, data: AnyArray) -> int:
+        return len(data)
+
+    def encode(self, data: AnyArray) -> PointerOrHostMem | int:
+        return (data, len(data))
+
+    def decode(
+        self, data: AnyArray | None = None, size_hint: int | None = None
+    ) -> PointerOrPointerGenerator[AnyArray]:
+        if data is None:
+            if size_hint is None:
+                raise Exception("need either bytearray or size hint")
+            data = array("Q", [0] * size_hint)  # TODO: real types
+
+        return (data, len(data))
