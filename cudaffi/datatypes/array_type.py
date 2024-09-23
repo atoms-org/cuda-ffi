@@ -1,7 +1,8 @@
+import ctypes
 from array import array
 from typing import Any
 
-from ..memory import CudaDataType, PointerOrHostMem, PointerOrPointerGenerator
+from ..memory import AnyCType, CudaDataType, PointerOrHostMem, PointerOrPointerGenerator
 
 AnyArray = array[Any]
 
@@ -12,6 +13,9 @@ class CudaArrayDataType(CudaDataType[AnyArray]):
 
     def get_byte_size(self, data: AnyArray) -> int:
         return len(data)
+
+    def get_ctype(self, data: AnyArray) -> AnyCType:
+        return ctypes.c_void_p
 
     def encode(self, data: AnyArray) -> PointerOrHostMem | int:
         return (data, len(data))

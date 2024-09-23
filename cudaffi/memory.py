@@ -27,6 +27,7 @@ else:
 
 class CudaDataType(ABC, Generic[DataType]):
     aliases: list[str] = list()
+    default_direction: str = "inout"
 
     def __init__(self, name: str) -> None:
         self.name = str
@@ -49,16 +50,21 @@ class CudaDataType(ABC, Generic[DataType]):
     ) -> PointerOrPointerGenerator[DataType]: ...
 
     @staticmethod
-    def register(name: str, DataType: type[CudaDataType[Any]], force: bool = False) -> None:
+    def register(
+        name: str,
+        DataType: type[CudaDataType[Any]],
+        force: bool = False,
+        is_alias: bool = False,
+    ) -> None:
         global data_type_registry
         if name in data_type_registry and not force:
             raise Exception(f"'{name}' already exists as a registered CudaDataType")
 
         dt = DataType(name)
         data_type_registry[name] = dt
-        if hasattr(dt, "aliases"):
+        if hasattr(dt, "aliases") and not is_alias:
             for alias in dt.aliases:
-                DataType.register(alias, DataType)
+                DataType.register(alias, DataType, is_alias=True)
 
     @staticmethod
     def get_registry() -> DataTypeRegistry:
@@ -156,6 +162,5 @@ class CudaManagedMemory(CudaMemory):
 MemPointer = Buffer | int
 PointerAndSize = tuple[MemPointer, int]
 PointerOrHostMem = PointerAndSize | CudaHostMemory
-PointerOrPointerGenerator = (
-    PointerOrHostMem | Generator[PointerOrHostMem, CudaDeviceMemory, DataType]
-)
+PointerGenerator = Generator[PointerOrHostMem, CudaDeviceMemory, DataType]
+PointerOrPointerGenerator = PointerOrHostMem | PointerGenerator[DataType]

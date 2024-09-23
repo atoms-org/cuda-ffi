@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Buffer
-from enum import Enum
+from enum import Enum, auto
+from types import GeneratorType
 from typing import Any
 
 from cuda import cuda
@@ -15,14 +16,17 @@ from .memory import (
     NvDeviceMemory,
     NvHostMemory,
     NvManagedMemory,
+    PointerGenerator,
+    PointerOrHostMem,
 )
 from .utils import checkCudaErrors
 
 
 class CudaArgDirection(Enum):
-    input = 1
-    output = 2
-    inout = 3
+    input = auto()
+    output = auto()
+    inout = auto()
+    autoout = auto()
 
 
 CudaSimpleArg = tuple[str, str]
@@ -84,11 +88,6 @@ class CudaArg:
         self.specified_type = arg_type
         self.data = data
         self.nv_data: int | NvDeviceMemory | NvManagedMemory
-        self.ctype: AnyCType
-        self.data_type: CudaDataType[Any]
-        self.direction: CudaArgDirection = (
-            arg_type.direction if arg_type is not None else CudaArgDirection["inout"]
-        )
 
         # find the datatype
         final_type_str: str | None = None
@@ -119,6 +118,10 @@ class CudaArg:
                 raise CudaDataConversionError(data, arg_type, f"converter not found for data")
 
         self.data_type = data_type_registry[final_type_str]
+        default_direction = CudaArgDirection[self.data_type.default_direction]
+        self.direction: CudaArgDirection = (
+            arg_type.direction if arg_type is not None else default_direction
+        )
         self.ctype = self.data_type.get_ctype(data)
         self.is_pointer = self.ctype.__name__.endswith("_p")
         self.dev_mem: CudaDeviceMemory | None = None
@@ -140,26 +143,54 @@ class CudaArg:
         assert self.dev_mem is not None
 
         enc_data = self.data_type.encode(self.data)
-        data: int | NvHostMemory | Buffer
-        if isinstance(enc_data, CudaHostMemory):
-            data = enc_data.nv_host_memory
-        elif isinstance(enc_data, int):
-            data = enc_data
-        else:
-            data = enc_data[0]
-        print("data", data)
+        host_nv_data = to_host_nv_data(enc_data)
 
         checkCudaErrors(
             cuda.cuMemcpyHtoDAsync(
                 self.dev_mem.nv_device_memory,
-                data,
+                host_nv_data,
                 self.byte_size,
                 stream.nv_stream,
             )
         )
 
-    def copy_to_host(self) -> None:
-        pass
+    def copy_to_host(self, stream: CudaStream | None = None) -> None:
+        if not self.is_pointer:
+            return
+
+        if stream is None:
+            stream = CudaStream.get_default()
+
+        assert self.dev_mem is not None
+
+        dec_data = self.data_type.decode(self.data)
+        # reveal_type(dec_data)
+
+        nv_data: PointerOrHostMem | int
+        if isinstance(dec_data, GeneratorType):
+            print("generator")
+            gen: PointerGenerator[Any] = dec_data
+            # prime the generator
+            next(gen)
+            # get the only value from the generator
+            try:
+                ret = next(gen)
+            except StopIteration as e:
+                ret = e.value
+        else:
+            print("non-generator")
+            ret = dec_data  # type: ignore
+        print("ret type", type(ret))
+        host_nv_data = to_host_nv_data(ret)
+
+        checkCudaErrors(
+            cuda.cuMemcpyDtoHAsync(
+                host_nv_data,
+                self.dev_mem.nv_device_memory,
+                self.byte_size,
+                stream.nv_stream,
+            )
+        )
 
 
 class CudaArgList:
@@ -179,8 +210,13 @@ class CudaArgList:
                 arg.copy_to_device()
 
     def copy_to_host(self) -> None:
-        # for arg in self.args:
-        pass
+        for arg in self.args:
+            if (
+                arg.direction == CudaArgDirection.output
+                or arg.direction == CudaArgDirection.autoout
+                or arg.direction == CudaArgDirection.inout
+            ):
+                arg.copy_to_host()
 
     def to_nv_args(self) -> NvKernelArgs:
         if len(self.args) == 0:
@@ -199,3 +235,12 @@ class CudaArgList:
         nv_args = (tuple(nv_data_args), tuple(nv_type_args))
         # nv_args = (nv_data_args, nv_type_args)
         return nv_args
+
+
+def to_host_nv_data(data: PointerOrHostMem | int) -> int | NvHostMemory | Buffer:
+    if isinstance(data, CudaHostMemory):
+        return data.nv_host_memory
+    elif isinstance(data, int):
+        return data
+    else:
+        return data[0]

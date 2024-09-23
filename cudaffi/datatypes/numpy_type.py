@@ -1,8 +1,9 @@
+import ctypes
 from typing import Any
 
 import numpy as np
 
-from ..memory import CudaDataType, PointerOrHostMem, PointerOrPointerGenerator
+from ..memory import AnyCType, CudaDataType, PointerOrHostMem, PointerOrPointerGenerator
 
 AnyNpArray = np.ndarray[Any, Any]
 
@@ -13,6 +14,9 @@ class CudaNumpyDataType(CudaDataType[AnyNpArray]):
 
     def get_byte_size(self, data: AnyNpArray) -> int:
         return len(data)
+
+    def get_ctype(self, data: AnyNpArray) -> AnyCType:
+        return ctypes.c_void_p
 
     def encode(self, arr: AnyNpArray) -> PointerOrHostMem:
         data = arr.ctypes.data

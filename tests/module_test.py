@@ -178,5 +178,6 @@ class TestFunction:
 
     def test_strin_strout(self) -> None:
         mod = CudaModule.from_file("tests/helpers/strstr.cu")
-        ba = bytearray(1024)
-        mod.strstr("input string", bytearray)
+        ba = bytearray(64)
+        mod.strstr("input string", ba)
+        print("final byte array:", str(ba))

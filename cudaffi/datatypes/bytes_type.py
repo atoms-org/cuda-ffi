@@ -1,6 +1,7 @@
+import ctypes
 from typing import Any
 
-from ..memory import CudaDataType, PointerOrHostMem, PointerOrPointerGenerator
+from ..memory import AnyCType, CudaDataType, PointerOrHostMem, PointerOrPointerGenerator
 
 
 class CudaBytesDataType(CudaDataType[bytes]):
@@ -9,6 +10,9 @@ class CudaBytesDataType(CudaDataType[bytes]):
 
     def get_byte_size(self, data: bytes) -> int:
         return len(data)
+
+    def get_ctype(self, data: bytes) -> AnyCType:
+        return ctypes.c_void_p
 
     def encode(self, data: bytes) -> PointerOrHostMem | int:
         return (data, len(data))
