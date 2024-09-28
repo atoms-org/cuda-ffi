@@ -10,17 +10,17 @@ AnyNpArray = np.ndarray[Any, Any]
 
 class CudaNumpyDataType(CudaDataType[AnyNpArray]):
     def is_type(self, data: Any) -> bool:
-        return isinstance(data, bytearray)
+        return isinstance(data, np.ndarray)
 
     def get_byte_size(self, data: AnyNpArray) -> int:
-        return len(data)
+        return data.nbytes
 
     def get_ctype(self, data: AnyNpArray) -> type[ctypes.c_void_p]:
         return ctypes.c_void_p
 
     def encode(self, arr: AnyNpArray) -> tuple[int, int]:
         data = arr.ctypes.data
-        return (data, len(arr))
+        return (data, arr.nbytes)
 
     def decode(
         self, arr: AnyNpArray | None = None, size_hint: int | None = None
@@ -30,4 +30,4 @@ class CudaNumpyDataType(CudaDataType[AnyNpArray]):
                 raise Exception("numpy needs size_hint if array isn't provided")
             arr = np.array(size_hint)
 
-        return (arr.ctypes.data, len(arr))
+        return (arr.ctypes.data, arr.nbytes)
