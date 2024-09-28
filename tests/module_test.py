@@ -1,5 +1,6 @@
 from typing import Any
 
+import numpy as np
 import pytest
 
 from cudaffi.args import CudaDataConversionError
@@ -181,6 +182,13 @@ class TestFunction:
         ba = bytearray(14)
         mod.strstr("input string", ba)
         assert ba.decode() == "this is a test"
+
+    def test_inout(self) -> None:
+        mod = CudaModule.from_file("tests/helpers/doublify.cu")
+        arr = np.random.randn(4, 4).astype(np.float32)
+        print("input", arr)
+        mod.doublify(arr, block=(4, 4, 1))
+        print("output", arr)
 
     def test_autoout(self) -> None:
         mod = CudaModule.from_file("tests/helpers/strstr.cu")
