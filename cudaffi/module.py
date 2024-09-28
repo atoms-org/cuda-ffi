@@ -116,7 +116,7 @@ class CudaFunction:
         grid: GridSpec | None = None,
         block: BlockSpec | None = None,
         stream: CudaStream | None = None,
-    ) -> None:
+    ) -> Any:
         if stream is None:
             stream = CudaStream.get_default()
 
@@ -126,8 +126,7 @@ class CudaFunction:
         arg_list.copy_to_device()
         nv_args = arg_list.to_nv_args()
         assert not isinstance(nv_args, int)
-        print("nv_args", nv_args)
-        print("type nvargs[0]", type(nv_args[0]))
+        print(f"nv_args ({len(nv_args)}): {nv_args}")
 
         if grid is None:
             grid = self.default_grid
@@ -157,6 +156,8 @@ class CudaFunction:
         # TODO
         s = CudaStream.get_default()
         s.synchronize()
+
+        return arg_list.get_outputs()
 
     def __repr__(self) -> str:
         return f"{self._cuda_module.progname}:{self.name}:{hex(id(self))}"

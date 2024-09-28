@@ -20,7 +20,6 @@ class CudaByteArrayDataType(CudaDataType[bytearray]):
     def decode(
         self, data: bytearray | None = None, size_hint: int | None = None
     ) -> PointerOrPointerGenerator[bytearray]:
-        print("bytearray decode")
         if data is None:
             if size_hint is None:
                 raise Exception("need either bytearray or size hint")

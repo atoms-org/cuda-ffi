@@ -178,6 +178,12 @@ class TestFunction:
 
     def test_strin_strout(self) -> None:
         mod = CudaModule.from_file("tests/helpers/strstr.cu")
-        ba = bytearray(64)
+        ba = bytearray(20)
         mod.strstr("input string", ba)
-        print("final byte array:", str(ba))
+        assert ba.decode() == "this is a test"
+
+    def test_autoout(self) -> None:
+        mod = CudaModule.from_file("tests/helpers/strstr.cu")
+        mod.strstr.arg_types = [("input", "str"), ("autoout", "str", 64)]
+        retstr = mod.strstr("input string")
+        assert retstr == "this is a test"
