@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import ctypes
 from abc import ABC, abstractmethod
-from collections.abc import Buffer
-from typing import TYPE_CHECKING, Any, Generator, Generic, NewType, TypeAlias, TypeVar
+from typing import NewType
 
 from cuda import cudart
 
@@ -13,66 +12,6 @@ from .utils import checkCudaErrors
 NvDeviceMemory = NewType("NvDeviceMemory", object)  # cuda.CUdeviceptr
 NvHostMemory = NewType("NvHostMemory", object)
 NvManagedMemory = NewType("NvManagedMemory", object)
-
-
-data_type_registry: DataTypeRegistry = {}
-DataType = TypeVar("DataType")
-
-# XXX - https://mypy.readthedocs.io/en/stable/runtime_troubles.html#using-classes-that-are-generic-in-stubs-but-not-at-runtime
-if TYPE_CHECKING:
-    AnyCType: TypeAlias = type[ctypes._SimpleCData[Any]]
-else:
-    AnyCType: TypeAlias = ctypes._SimpleCData
-
-
-class CudaDataType(ABC, Generic[DataType]):
-    aliases: list[str] = list()
-    default_direction: str = "inout"
-
-    def __init__(self, name: str) -> None:
-        self.name = str
-
-    @abstractmethod
-    def is_type(self, data: Any) -> bool: ...
-
-    @abstractmethod
-    def get_byte_size(self, data: DataType) -> int: ...
-
-    @abstractmethod
-    def get_ctype(self, data: DataType) -> AnyCType: ...
-
-    @abstractmethod
-    def encode(self, data: DataType) -> PointerOrHostMem | int: ...
-
-    @abstractmethod
-    def decode(
-        self, data: DataType | None = None, size_hint: int | None = None
-    ) -> PointerOrPointerGenerator[DataType]: ...
-
-    @staticmethod
-    def register(
-        name: str,
-        DataType: type[CudaDataType[Any]],
-        force: bool = False,
-        is_alias: bool = False,
-    ) -> None:
-        global data_type_registry
-        if name in data_type_registry and not force:
-            raise Exception(f"'{name}' already exists as a registered CudaDataType")
-
-        dt = DataType(name)
-        data_type_registry[name] = dt
-        if hasattr(dt, "aliases") and not is_alias:
-            for alias in dt.aliases:
-                DataType.register(alias, DataType, is_alias=True)
-
-    @staticmethod
-    def get_registry() -> DataTypeRegistry:
-        global data_type_registry
-        return data_type_registry
-
-
-DataTypeRegistry = dict[str, CudaDataType[Any]]
 
 
 class CudaMemory(ABC):
@@ -156,11 +95,3 @@ class CudaManagedMemory(CudaMemory):
     @property
     def dev_addr(self) -> NvManagedMemory:
         return self.nv_managed_memory
-
-
-# TODO: should we support collections.abc.memoryview everywhere we support Buffer?
-MemPointer = Buffer | int
-PointerAndSize = tuple[MemPointer, int]
-PointerOrHostMem = PointerAndSize | CudaHostMemory
-PointerGenerator = Generator[PointerOrHostMem, CudaDeviceMemory, DataType]
-PointerOrPointerGenerator = PointerOrHostMem | PointerGenerator[DataType]

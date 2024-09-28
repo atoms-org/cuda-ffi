@@ -1,8 +1,9 @@
 import ctypes
 import warnings
-from typing import Any
+from collections.abc import Buffer
+from typing import Any, Generator
 
-from ..memory import AnyCType, CudaDataType, PointerOrPointerGenerator
+from ..args import CudaDataType
 
 
 class CudaIntDataType(CudaDataType[int]):
@@ -20,7 +21,7 @@ class CudaIntDataType(CudaDataType[int]):
     def get_byte_size(self, data: int) -> int:
         return self.byte_size
 
-    def get_ctype(self, data: int) -> AnyCType:
+    def get_ctype(self, data: int) -> type[ctypes.c_int]:
         return ctypes.c_int
 
     def encode(self, data: int) -> int:
@@ -43,7 +44,7 @@ class CudaIntDataType(CudaDataType[int]):
 
     def decode(
         self, data: int | None = None, size_hint: int | None = None
-    ) -> PointerOrPointerGenerator[int]:
+    ) -> Generator[tuple[Buffer, int], Any, int]:
         if size_hint is None or size_hint < 1:
             size_hint = 8
 

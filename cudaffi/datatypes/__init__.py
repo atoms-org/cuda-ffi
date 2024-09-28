@@ -1,4 +1,4 @@
-from ..memory import CudaDataType
+from ..args import CudaDataType
 
 __all__ = ["CudaDataType"]
 

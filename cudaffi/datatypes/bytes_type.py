@@ -1,7 +1,8 @@
 import ctypes
-from typing import Any
+from collections.abc import Buffer
+from typing import Any, Generator
 
-from ..memory import AnyCType, CudaDataType, PointerOrHostMem, PointerOrPointerGenerator
+from ..args import CudaDataType
 
 
 class CudaBytesDataType(CudaDataType[bytes]):
@@ -11,15 +12,15 @@ class CudaBytesDataType(CudaDataType[bytes]):
     def get_byte_size(self, data: bytes) -> int:
         return len(data)
 
-    def get_ctype(self, data: bytes) -> AnyCType:
+    def get_ctype(self, data: bytes) -> type[ctypes.c_void_p]:
         return ctypes.c_void_p
 
-    def encode(self, data: bytes) -> PointerOrHostMem | int:
+    def encode(self, data: bytes) -> tuple[Buffer, int]:
         return (data, len(data))
 
     def decode(
         self, data: bytes | None = None, size_hint: int | None = None
-    ) -> PointerOrPointerGenerator[bytes]:
+    ) -> Generator[tuple[Buffer, int], Any, bytes]:
         if data is not None:
             raise Exception("the type 'bytes' is immutable, cannot read into bytes")
 
