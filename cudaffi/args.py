@@ -209,10 +209,9 @@ class CudaArg:
                 final_type_str = type
                 break
 
-        if final_type_str is None and arg_type is not None:
+        if final_type_str is None:
             raise CudaDataConversionError(data, arg_type, f"converter not found for data")
 
-        assert final_type_str is not None
         self.data_type = data_type_registry[final_type_str]
         default_direction = CudaArgDirection[self.data_type.default_direction]
         self.direction: CudaArgDirection = (
