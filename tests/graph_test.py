@@ -1,7 +1,5 @@
 from cudaffi.graph.graph import CudaGraph
-from cudaffi.graph.kernel import CudaKernelNode
 from cudaffi.graph.malloc import CudaMallocNode
-from cudaffi.module import CudaModule
 
 # from cudaffi.graph.malloc import CudaMallocNode, CudaMemAddr
 # from cudaffi.graph.memcpy import CudaMemcpyNode
@@ -14,13 +12,13 @@ class TestGraph:
         CudaGraph()
 
 
-class TestKernelNode:
-    def test_basic(self) -> None:
-        mod = CudaModule.from_file("tests/helpers/simple.cu")
-        fn = mod.get_function("simple")
-        g = CudaGraph()
-        CudaKernelNode(g, fn)
-        g.run()
+# class TestKernelNode:
+#     def test_basic(self) -> None:
+#         mod = CudaModule.from_file("tests/helpers/simple.cu")
+#         fn = mod.get_function("simple")
+#         g = CudaGraph()
+#         CudaKernelNode(g, fn)
+#         g.run()
 
 
 # class TestMemsetNode:

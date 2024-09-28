@@ -68,7 +68,7 @@ class CudaDataType(ABC, Generic[DataType]):
         data_type_registry[name] = dt
         if hasattr(dt, "aliases") and not is_alias:
             for alias in dt.aliases:
-                DataType.register(alias, DataType, is_alias=True)
+                DataType.register(alias, DataType, is_alias=True, force=force)
 
     @staticmethod
     def get_registry() -> DataTypeRegistry:

@@ -125,8 +125,6 @@ class CudaFunction:
         arg_list = CudaArgList(args, self.arg_types)
         arg_list.copy_to_device()
         nv_args = arg_list.to_nv_args()
-        assert not isinstance(nv_args, int)
-        print(f"nv_args ({len(nv_args)}): {nv_args}")
 
         if grid is None:
             grid = self.default_grid

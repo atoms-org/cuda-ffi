@@ -178,7 +178,7 @@ class TestFunction:
 
     def test_strin_strout(self) -> None:
         mod = CudaModule.from_file("tests/helpers/strstr.cu")
-        ba = bytearray(20)
+        ba = bytearray(14)
         mod.strstr("input string", ba)
         assert ba.decode() == "this is a test"
 
