@@ -68,14 +68,19 @@ out = mod.multiply_them(a, b)
 
 ## Graphs and Chaining
 ``` python
-from cudaffi import CudaModule, CudaGraph
+from cudaffi import CudaModule, cuda_plan
+import numpy as np
 
 mod = CudaModule.load_file("test_graph.cu")
 mod.start_ker.arg_types = [("input", "numpy"), ("output", "bytes"), ("output", "int32")]
 mod.middle_ker.arg_types = [("input", "bytes"), ("input", "int32"), ("output", "bytes"), ("output", "int16")]
 mod.end_ker.arg_types = [("input", "bytes"), ("input", "int16"), ("output", "int16")]
 
-CudaGraph.start(mod.start_ker)
+@cuda_plan
+def my_plan(arr: np.nparray[Any, Any]) -> int:
+  b, sz = mod.start_ker(arr)
+  b2, sz2 = mod.middle_ker(b, sz)
+  return mod.end_ker(b2, sz2)
 ```
 
 ## NVIDIA Device, Stream, Context Management
