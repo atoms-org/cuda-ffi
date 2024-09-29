@@ -1,4 +1,4 @@
-from cudaffi.plan import CudaPlan, cuda_plan, parse_plan
+from cudaffi.plan import CudaPlan, cuda_plan
 
 
 class TestPlan:
@@ -16,16 +16,26 @@ class TestPlan:
 
         myfunc(3)
 
-    def test_parse(self) -> None:
-        def myfn(arg1: int, arg2: str) -> int:
-            ret, out = mod1.kernel1(arg1, arg2)  # type: ignore
-            ret2 = mod2.kernel2(ret, "this is a test", 1)  # type: ignore
-            return ret2  # type: ignore
-
-        parse_plan(myfn)
-
 
 class TestCudaPlan:
+    def test_function_definition(self) -> None:
+        def myfn(a, b):  # type: ignore
+            return a
+
+        p = CudaPlan(myfn)
+
+        assert p.inputs == [("a", "Any"), ("b", "Any")]
+        assert p.output_type == "Any"
+
+    def test_function_definition_with_types(self) -> None:
+        def myfn(a: str, b: int) -> str:
+            return a
+
+        p = CudaPlan(myfn)
+
+        assert p.inputs == [("a", "str"), ("b", "int")]
+        assert p.output_type == "str"
+
     def test_call(self) -> None:
         def myfn(a: str, b: int) -> None:
             bob()  # type: ignore
@@ -146,3 +156,4 @@ class TestCudaPlan:
     # constant int
     # constant float
     # kwargs
+    # steps after return
