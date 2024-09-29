@@ -5,7 +5,7 @@ import time
 from functools import partial, wraps
 from typing import Any, Callable, cast
 
-from cudaffi.module import CudaModule
+from cudaffi.module import CudaFunction, CudaModule
 
 ModType = dict[str, str | CudaModule]
 AnyFn = Callable[[Any], Any]
@@ -79,13 +79,120 @@ class CudaPlan:
         if not isinstance(self.src_ast.body[0], ast.FunctionDef):
             raise CudaPlanException("expected body of cuda plan to be a single function")
 
+        import pprint
+
+        pprint.pprint(ast.dump(self.src_ast))
+
+        # TODO: get args from function definition
+        self.fn_def_ast = self.src_ast.body[0]
+        self.fn_def_args_ast = self.fn_def_ast.args.args
+        for n in range(len(self.fn_def_args_ast)):
+            arg = self.fn_def_args_ast[n]
+            annote = decode_expr(arg.annotation) if arg.annotation else "None"
+            print(f"function def arg {arg.arg}, type {annote}")
+            # TODO: new CudaPlanVar
+
+        # decode statements
+        self.steps: list[CudaPlanStep] = []
+        for stmt in self.fn_def_ast.body:
+            self.steps.append(CudaPlanStep(stmt))
+
 
 class CudaPlanVar:
-    pass
+    def __init__(self, name: str, type: str | None = None):
+        self.name = name
 
 
-class CudaPlanStmt:
-    pass
+class CudaPlanStep:
+    def __init__(self, stmt: ast.stmt) -> None:
+        self.exec: CudaFunction | CudaPlan | None = None
+        self.input_vars: list[CudaPlanVar] = []
+        self.output_vars: list[CudaPlanVar] = []
+        self.is_return: bool = False
+        self.call_name: str | None = None
+        self.call_module: str | None = None
+        self.input_arg_names: list[str] = []
+        self.output_arg_names: list[str] = []
+
+        match stmt:
+            case ast.Assign():
+                print("statement type: assignment")
+                self.output_arg_names = _decode_assignment_targets(stmt)
+                assert isinstance(stmt.value, ast.Call)
+                self.call_name, self.call_module = _decode_call_name(stmt.value)
+                self.input_arg_names = _decode_call_args(stmt.value)
+            case ast.Return():
+                self.is_return = True
+                match stmt.value:
+                    case ast.Name():
+                        self.output_arg_names.append(stmt.value.id)
+                        self.input_arg_names.append(stmt.value.id)
+                    case ast.Tuple():
+                        tup: ast.Tuple = stmt.value
+                        for e in tup.elts:
+                            assert isinstance(e, ast.Name)
+                            self.output_arg_names.append(e.id)
+                            self.input_arg_names.append(e.id)
+                    case ast.Call():
+                        self.call_name, self.call_module = _decode_call_name(stmt.value)
+                        self.input_arg_names = _decode_call_args(stmt.value)
+                    case _:
+                        raise Exception(f"unknown return value: '{stmt.value.__class__.__name__}'")
+
+                print("statement type: return")
+                # decode_return(stmt)
+            case ast.Expr():
+                print("statement type: expression")
+                print("is call", isinstance(stmt.value, ast.Call))
+                assert isinstance(stmt.value, ast.Call)
+                self.call_name, self.call_module = _decode_call_name(stmt.value)
+                self.input_arg_names = _decode_call_args(stmt.value)
+            case _:
+                raise Exception(f"unknown statement type: '{stmt.__class__.__name__}'")
+
+
+def _decode_assignment_targets(assn: ast.Assign) -> list[str]:
+    ret: list[str] = []
+
+    for tgt in assn.targets:
+        match tgt:
+            case ast.Name():
+                ret.append(tgt.id)
+            case ast.Tuple():
+                tup: ast.Tuple = tgt
+                for e in tup.elts:
+                    assert isinstance(e, ast.Name)
+                    ret.append(e.id)
+            case _:
+                raise Exception(f"unknown assignment target: '{tgt.__class__.__name__}'")
+
+    return ret
+
+
+def _decode_call_name(call: ast.Call) -> tuple[str, str | None]:
+    match call.func:
+        case ast.Name():
+            return (call.func.id, None)
+        case ast.Attribute():
+            assert isinstance(call.func.value, ast.Name)
+            mod_name = call.func.value.id
+            fn_name = call.func.attr
+            return (fn_name, mod_name)
+        case _:
+            raise Exception(f"unknown call name: '{call.func.__class__.__name__}'")
+
+
+def _decode_call_args(call: ast.Call) -> list[str]:
+    ret: list[str] = []
+
+    for arg in call.args:
+        match arg:
+            case ast.Name():
+                ret.append(arg.id)
+            case _:
+                raise Exception(f"unknown call argument: '{arg.__class__.__name__}'")
+
+    return ret
 
 
 def parse_plan(fn: Any) -> None:
@@ -97,7 +204,7 @@ def parse_plan(fn: Any) -> None:
 
     import pprint
 
-    pprint.pprint(ast.dump(tree))
+    pprint.pprint(ast.dump(tree, indent=4))
 
     assert len(tree.body) == 1
 
