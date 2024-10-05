@@ -1,10 +1,11 @@
 import pytest
 
+from cudaffi.module import CudaFunction, CudaModule
 from cudaffi.plan import CudaPlan, CudaPlanException, CudaPlanVarType, cuda_plan
 
 
 class TestPlan:
-    def test_decorator_with_args(self) -> None:
+    def test_decorator_without_args(self) -> None:
         @cuda_plan
         def myfunc(foo: int) -> int:
             return foo
@@ -19,16 +20,27 @@ class TestPlan:
         assert myfunc.__name__ == "myfunc"
         assert hasattr(myfunc, "__wrapped__")
 
-    # def test_decorator_without_args(self) -> None:
-    #     @cuda_plan
-    #     def myfunc(foo: int) -> int:
-    #         return foo
+    def test_decorator_with_args(self) -> None:
+        @cuda_plan()
+        def myfunc(foo: int) -> int:
+            return foo
 
-    #     myfunc(3)
-    #     print("myfunc is CudaPlan", isinstance(myfunc, CudaPlan))
+        myfunc(3)
+
+        # make sure the function is now a CudaPlan
+        assert isinstance(myfunc, CudaPlan)
+        assert hasattr(myfunc, "fn_def_ast")  # type: ignore
+
+        # make sure the wrapper worked
+        assert myfunc.__name__ == "myfunc"
+        assert hasattr(myfunc, "__wrapped__")
 
 
-class TestCudaPlan:
+class TestCudaPlanParsing:
+    @pytest.fixture(autouse=True)
+    def simple_mod(self) -> CudaModule:
+        return CudaModule.from_file("tests/helpers/simple.cu")
+
     def test_function_definition(self) -> None:
         def myfn(a, b):  # type: ignore
             return a
@@ -57,16 +69,15 @@ class TestCudaPlan:
 
     def test_call(self) -> None:
         def myfn(a: str, b: int) -> None:
-            bob()  # type: ignore
+            simple()  # type: ignore
 
         p = CudaPlan(myfn)
 
         assert len(p.steps) == 1
-        assert p.steps[0].call_name == "bob"
-        assert p.steps[0].call_module is None
+        assert isinstance(p.steps[0].call_fn, CudaFunction)
+        assert p.steps[0].call_fn.name == "simple"
         assert len(p.steps[0].output_vars) == 0
         assert len(p.steps[0].input_vars) == 0
-        print("output type", p.output_type)
 
     # TODO: putting a comma between two statements turns it into a tuple
     # def test_comma(self) -> None:
@@ -82,27 +93,29 @@ class TestCudaPlan:
     #     assert len(p.steps[0].input_vars) == 0
     #     print("output type", p.output_type)
 
-    def test_attribute(self) -> None:
+    def test_attribute(self, simple_mod: CudaModule) -> None:
         def myfn(a: str, b: int) -> None:
-            thingy.bob()  # type: ignore
+            thingy.simple()  # type: ignore
 
-        p = CudaPlan(myfn)
+        p = CudaPlan(myfn, modules={"thingy": simple_mod})
 
+        assert len(p.vars) == 2
         assert len(p.steps) == 1
-        assert p.steps[0].call_name == "bob"
-        assert p.steps[0].call_module == "thingy"
+        assert isinstance(p.steps[0].call_fn, CudaFunction)
+        assert p.steps[0].call_fn.name == "simple"
         assert len(p.steps[0].output_vars) == 0
         assert len(p.steps[0].input_vars) == 0
 
     def test_assignment(self) -> None:
         def myfn(a: str, b: int) -> None:
-            x = bob()  # type: ignore
+            x = simple()  # type: ignore
 
         p = CudaPlan(myfn)
 
+        assert len(p.vars) == 3
         assert len(p.steps) == 1
-        assert p.steps[0].call_name == "bob"
-        assert p.steps[0].call_module is None
+        assert isinstance(p.steps[0].call_fn, CudaFunction)
+        assert p.steps[0].call_fn.name == "simple"
         assert len(p.steps[0].input_vars) == 0
         assert len(p.steps[0].output_vars) == 1
         assert p.steps[0].output_vars[0].name == "x"
@@ -111,13 +124,14 @@ class TestCudaPlan:
 
     def test_dereferencing(self) -> None:
         def myfn(a: str, b: int) -> None:
-            x, y = bob()  # type: ignore
+            x, y = simple()  # type: ignore
 
         p = CudaPlan(myfn)
 
+        assert len(p.vars) == 4
         assert len(p.steps) == 1
-        assert p.steps[0].call_name == "bob"
-        assert p.steps[0].call_module is None
+        assert isinstance(p.steps[0].call_fn, CudaFunction)
+        assert p.steps[0].call_fn.name == "simple"
         assert len(p.steps[0].input_vars) == 0
         assert len(p.steps[0].output_vars) == 2
         assert p.steps[0].output_vars[0].name == "x"
@@ -128,13 +142,14 @@ class TestCudaPlan:
 
     def test_call_args(self) -> None:
         def myfn(a: str, b: int) -> None:
-            bob(a, b)  # type: ignore
+            simple(a, b)  # type: ignore
 
         p = CudaPlan(myfn)
 
+        assert len(p.vars) == 2
         assert len(p.steps) == 1
-        assert p.steps[0].call_name == "bob"
-        assert p.steps[0].call_module is None
+        assert isinstance(p.steps[0].call_fn, CudaFunction)
+        assert p.steps[0].call_fn.name == "simple"
         assert len(p.steps[0].input_vars) == 2
         assert p.steps[0].input_vars[0].name == "a"
         assert p.steps[0].input_vars[0].type == CudaPlanVarType.arg
@@ -145,13 +160,14 @@ class TestCudaPlan:
 
     def test_call_args_constant(self) -> None:
         def myfn(a: str, b: int) -> None:
-            bob(42, 3.14, "foo", True)  # type: ignore
+            simple(42, 3.14, "foo", True)  # type: ignore
 
         p = CudaPlan(myfn)
 
+        assert len(p.vars) == 6
         assert len(p.steps) == 1
-        assert p.steps[0].call_name == "bob"
-        assert p.steps[0].call_module is None
+        assert isinstance(p.steps[0].call_fn, CudaFunction)
+        assert p.steps[0].call_fn.name == "simple"
         assert len(p.steps[0].input_vars) == 4
         assert p.steps[0].input_vars[0].type == CudaPlanVarType.constant
         assert p.steps[0].input_vars[0].name == "42"
@@ -170,13 +186,13 @@ class TestCudaPlan:
 
     def test_call_kwargs(self) -> None:
         def myfn(a: str, b: int) -> None:
-            bob(a, foo=bar, block=(1, 1, 1), grid=(1, 1, 1))  # type: ignore
+            simple(a, foo=bar, block=(1, 1, 1), grid=(1, 1, 1))  # type: ignore
 
         p = CudaPlan(myfn)
 
         assert len(p.steps) == 1
-        assert p.steps[0].call_name == "bob"
-        assert p.steps[0].call_module is None
+        assert isinstance(p.steps[0].call_fn, CudaFunction)
+        assert p.steps[0].call_fn.name == "simple"
         assert len(p.steps[0].input_vars) == 1
         assert p.steps[0].input_vars[0].name == "a"
         assert p.steps[0].input_vars[0].type == CudaPlanVarType.arg
@@ -202,8 +218,7 @@ class TestCudaPlan:
         p = CudaPlan(myfn)
 
         assert len(p.steps) == 1
-        assert p.steps[0].call_name is None
-        assert p.steps[0].call_module is None
+        assert p.steps[0].call_fn is None
         assert p.steps[0].is_return
         assert len(p.steps[0].input_vars) == 1
         assert p.steps[0].input_vars[0].name == "a"
@@ -211,26 +226,26 @@ class TestCudaPlan:
 
     def test_return_call(self) -> None:
         def myfn(a: str, b: int) -> str:
-            return bob()  # type: ignore
+            return simple()  # type: ignore
 
         p = CudaPlan(myfn)
 
         assert len(p.steps) == 1
-        assert p.steps[0].call_name == "bob"
-        assert p.steps[0].call_module is None
+        assert isinstance(p.steps[0].call_fn, CudaFunction)
+        assert p.steps[0].call_fn.name == "simple"
         assert p.steps[0].is_return
         assert len(p.steps[0].input_vars) == 0
         assert len(p.steps[0].output_vars) == 0
 
-    def test_return_call_with_module(self) -> None:
+    def test_return_call_with_module(self, simple_mod: CudaModule) -> None:
         def myfn(a: str, b: int) -> str:
-            return beer.bob()  # type: ignore
+            return beer.simple()  # type: ignore
 
-        p = CudaPlan(myfn)
+        p = CudaPlan(myfn, modules={"beer": simple_mod})
 
         assert len(p.steps) == 1
-        assert p.steps[0].call_name == "bob"
-        assert p.steps[0].call_module == "beer"
+        assert isinstance(p.steps[0].call_fn, CudaFunction)
+        assert p.steps[0].call_fn.name == "simple"
         assert p.steps[0].is_return
         assert len(p.steps[0].input_vars) == 0
         assert len(p.steps[0].output_vars) == 0
@@ -241,9 +256,9 @@ class TestCudaPlan:
 
         p = CudaPlan(myfn)
 
+        assert len(p.vars) == 2
         assert len(p.steps) == 1
-        assert p.steps[0].call_name is None
-        assert p.steps[0].call_module is None
+        assert p.steps[0].call_fn is None
         assert len(p.steps[0].input_vars) == 2
         assert p.steps[0].input_vars[0].name == "a"
         assert p.steps[0].input_vars[0].type == CudaPlanVarType.arg
@@ -259,9 +274,9 @@ class TestCudaPlan:
 
         p = CudaPlan(myfn)
 
+        assert len(p.vars) == 3
         assert len(p.steps) == 1
-        assert p.steps[0].call_name is None
-        assert p.steps[0].call_module is None
+        assert p.steps[0].call_fn is None
         assert len(p.steps[0].input_vars) == 0
         assert len(p.steps[0].output_vars) == 1
         assert p.steps[0].output_vars[0].name == "42"
@@ -273,9 +288,18 @@ class TestCudaPlan:
     def test_steps_after_return(self) -> None:
         def myfn(a: str, b: int) -> int:
             return 42
-            bob()  # type: ignore
+            simple()  # type: ignore
 
         with pytest.raises(CudaPlanException) as e:
             CudaPlan(myfn)
 
         assert e.value.message == "statements found after return in CudaPlan"
+
+
+class TestCudaPlan:
+    def test_to_graph_basic(self) -> None:
+        mymod = CudaModule.from_file("tests/helpers/simple.cu")
+
+        @cuda_plan
+        def myfn() -> None:
+            mymod.simple()
