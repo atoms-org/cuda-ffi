@@ -286,6 +286,34 @@ class CudaModule:
         ret = cuda.cuModuleLoadData(self.ptx.ctypes.data)
         self.nv_module = checkCudaErrors(ret)
 
+        module_list.append(self)
+
+    def __getattr__(self, name: str) -> CudaFunction:
+        return self.get_function(name)
+
+    def get_function(self, name: str) -> CudaFunction:
+        if name in self.fn_cache:
+            return self.fn_cache[name]
+
+        fn = CudaFunction(self, name)
+        self.fn_cache[name] = fn
+        return fn
+
+    def has_function(self, name: str) -> bool:
+        try:
+            self.get_function(name)
+            return True
+        except CudaFunctionNameNotFound:
+            return False
+
+    @staticmethod
+    def find_function(name: str) -> CudaFunction | None:
+        for mod in module_list:
+            if mod.has_function(name):
+                return mod.get_function(name)
+
+        return None
+
     @staticmethod
     def _make_compile_flags(
         opts: list[str] | None,
@@ -304,17 +332,6 @@ class CudaModule:
 
         return ret
 
-    def get_function(self, name: str) -> CudaFunction:
-        if name in self.fn_cache:
-            return self.fn_cache[name]
-
-        fn = CudaFunction(self, name)
-        self.fn_cache[name] = fn
-        return fn
-
-    def __getattr__(self, name: str) -> CudaFunction:
-        return self.get_function(name)
-
     # def __del__(self) -> None:
     #     # if compile fails, the nv_module attribute hasn't been set het
     #     if hasattr(self, "nv_module"):
@@ -326,6 +343,11 @@ class CudaModule:
             code = f.read()
         return CudaModule(code=code, progname=filename)
 
+    @staticmethod
+    def clear_list() -> None:
+        module_list.clear()
 
+
+module_list: list[CudaModule] = []
 BlockSpecCallback = Callable[[str, CudaModule, tuple[Any, ...]], BlockSpec]
 GridSpecCallback = Callable[[str, CudaModule, tuple[Any, ...]], BlockSpec]

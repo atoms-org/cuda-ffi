@@ -149,6 +149,31 @@ class TestFunction:
         s = repr(mod.simple)
         assert s.startswith("tests/helpers/simple.cu:simple:0x")
 
+    def test_has_function(self) -> None:
+        mod = CudaModule.from_file("tests/helpers/simple.cu")
+
+        assert mod.has_function("simple")
+        assert not mod.has_function("asdfqwer")
+
+    def test_find_function(self) -> None:
+        assert CudaModule.find_function("simple") is None
+        assert CudaModule.find_function("doublify") is None
+
+        mod = CudaModule.from_file("tests/helpers/simple.cu")
+        assert isinstance(CudaModule.find_function("simple"), CudaFunction)
+
+        CudaModule.from_file("tests/helpers/doublify.cu")
+        assert isinstance(CudaModule.find_function("doublify"), CudaFunction)
+
+        assert CudaModule.find_function("asdfqwer") is None
+
+    def test_clear_list(self) -> None:
+        assert CudaModule.find_function("simple") is None
+        mod = CudaModule.from_file("tests/helpers/simple.cu")
+        assert isinstance(CudaModule.find_function("simple"), CudaFunction)
+        CudaModule.clear_list()
+        assert CudaModule.find_function("simple") is None
+
     def test_arg_type_string(self) -> None:
         mod = CudaModule.from_file("tests/helpers/string_arg.cu")
         mod.printstr("blah")
