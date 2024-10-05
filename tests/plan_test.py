@@ -186,7 +186,7 @@ class TestCudaPlanParsing:
 
     def test_call_kwargs(self) -> None:
         def myfn(a: str, b: int) -> None:
-            simple(a, foo=bar, block=(1, 1, 1), grid=(1, 1, 1))  # type: ignore
+            simple(a, block=(1, 1, 1), grid=(1, 1, 1))  # type: ignore
 
         p = CudaPlan(myfn)
 
@@ -196,10 +196,7 @@ class TestCudaPlanParsing:
         assert len(p.steps[0].input_vars) == 1
         assert p.steps[0].input_vars[0].name == "a"
         assert p.steps[0].input_vars[0].type == CudaPlanVarType.arg
-        assert len(p.steps[0].input_kwvars.keys()) == 3
-        assert "foo" in p.steps[0].input_kwvars
-        assert p.steps[0].input_kwvars["foo"].name == "bar"
-        assert p.steps[0].input_kwvars["foo"].type == CudaPlanVarType.arg
+        assert len(p.steps[0].input_kwvars.keys()) == 2
         assert "block" in p.steps[0].input_kwvars
         assert p.steps[0].input_kwvars["block"].name == "(1, 1, 1)"
         assert p.steps[0].input_kwvars["block"].type == CudaPlanVarType.constant

@@ -79,9 +79,9 @@ class CudaPlan:
         if not isinstance(self.src_ast.body[0], ast.FunctionDef):
             raise CudaPlanException("expected body of cuda plan to be a single function")
 
-        # import pprint
+        import pprint
 
-        # pprint.pprint(ast.dump(self.src_ast))
+        pprint.pprint(ast.dump(self.src_ast))
 
         # get args from function definition
         self.fn_def_ast = self.src_ast.body[0]
@@ -293,16 +293,36 @@ class CudaPlanStep:
             match arg:
                 case ast.Name():
                     key = kwarg.arg
-                    assert key is not None
-                    if isinstance(kwarg.value, ast.Name):
-                        kwargs_ret[key] = CudaPlanVar(kwarg.value.id, CudaPlanVarType.arg)
-                    else:
-                        val_str = ast.unparse(kwarg.value)
-                        kwargs_ret[key] = CudaPlanVar(
-                            val_str,
-                            CudaPlanVarType.constant,
-                            val=eval(val_str),  # TODO: remove eval
+                    if not key in ["block", "grid"]:
+                        raise CudaPlanException(
+                            "only 'block' and 'grid' keyword args are currently allowed"
                         )
+                    match kwarg.value:
+                        # case ast.Name():
+                        #     kwargs_ret[key] = CudaPlanVar(kwarg.value.id, CudaPlanVarType.arg)
+                        case ast.Tuple():
+                            if len(kwarg.value.elts) != 3:
+                                raise CudaPlanException(
+                                    "only tuple of three integers is currently allowed for kwargs"
+                                )
+
+                            tuple_vals: list[int] = []
+                            for e in kwarg.value.elts:
+                                if not isinstance(e, ast.Constant) or not isinstance(e.value, int):
+                                    raise CudaPlanException(
+                                        "only tuple of three integers is currently allowed for kwargs"
+                                    )
+                                tuple_vals.append(e.value)
+
+                            val_str = ast.unparse(kwarg.value)
+                            kwargs_ret[key] = CudaPlanVar(
+                                val_str, CudaPlanVarType.constant, tuple(tuple_vals)
+                            )
+                            print("kwarg.value", kwarg.value)
+                        case _:
+                            raise CudaPlanException(
+                                "only tuple of three integers is currently allowed for kwargs"
+                            )
                 case ast.Constant():
                     key = kwarg.arg
                     assert key is not None
