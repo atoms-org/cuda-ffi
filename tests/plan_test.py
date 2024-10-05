@@ -61,7 +61,7 @@ class TestCudaPlanParsing:
 
     def test_function_definition_return_none(self) -> None:
         def myfn(a, b) -> None:  # type: ignore
-            bob()  # type: ignore
+            simple()  # type: ignore
 
         p = CudaPlan(myfn)
 
@@ -297,9 +297,13 @@ class TestCudaPlanParsing:
 
 
 class TestCudaPlan:
-    def test_to_graph_basic(self) -> None:
+    @pytest.fixture(autouse=True)
+    def simple_mod(self) -> CudaModule:
+        return CudaModule.from_file("tests/helpers/simple.cu")
+
+    def test_to_graph_basic(self, simple_mod: CudaModule) -> None:
         mymod = CudaModule.from_file("tests/helpers/simple.cu")
 
-        @cuda_plan
+        @cuda_plan(modules={"mymod": simple_mod})
         def myfn() -> None:
             mymod.simple()
