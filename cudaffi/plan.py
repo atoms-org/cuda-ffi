@@ -79,9 +79,9 @@ class CudaPlan:
         if not isinstance(self.src_ast.body[0], ast.FunctionDef):
             raise CudaPlanException("expected body of cuda plan to be a single function")
 
-        import pprint
+        # import pprint
 
-        pprint.pprint(ast.dump(self.src_ast))
+        # pprint.pprint(ast.dump(self.src_ast))
 
         # get args from function definition
         self.fn_def_ast = self.src_ast.body[0]
@@ -298,8 +298,6 @@ class CudaPlanStep:
                             "only 'block' and 'grid' keyword args are currently allowed"
                         )
                     match kwarg.value:
-                        # case ast.Name():
-                        #     kwargs_ret[key] = CudaPlanVar(kwarg.value.id, CudaPlanVarType.arg)
                         case ast.Tuple():
                             if len(kwarg.value.elts) != 3:
                                 raise CudaPlanException(
