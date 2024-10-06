@@ -304,3 +304,7 @@ class TestCudaPlan:
         @cuda_plan(modules={"mymod": simple_mod})
         def myfn() -> None:
             mymod.simple()
+
+        assert isinstance(myfn, CudaPlan)
+        g = myfn.to_graph()
+        g.run()

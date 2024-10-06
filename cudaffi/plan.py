@@ -10,6 +10,7 @@ from typing import Any, Callable, ParamSpec, TypeVar, cast, overload
 from cudaffi.module import CudaFunction, CudaFunctionNameNotFound, CudaModule
 
 from .graph.graph import CudaGraph
+from .graph.kernel import CudaKernelNode
 
 ModType = dict[str, str | CudaModule]
 AnyFn = Callable[[Any], Any]
@@ -151,7 +152,9 @@ class CudaPlan:
     def to_graph(self) -> CudaGraph:
         g = CudaGraph()
         for step in self.steps:
-            print("step")
+            if step.call_fn is not None:
+                CudaKernelNode(g, step.call_fn)
+                # TODO: map variables to arguments
         return g
 
 
