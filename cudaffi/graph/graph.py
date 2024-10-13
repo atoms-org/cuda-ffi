@@ -58,6 +58,9 @@ class CudaGraph:
         # }
         # deviceSupportsMemoryNodes = (driverVersion >= 11040) && (deviceSupportsMemoryPools != 0);
 
+        if dev.get_attribute("memory_pools_supported") != 1:
+            return False
+
         major, minor = dev.driver_version
         if major > 11:
             return True
