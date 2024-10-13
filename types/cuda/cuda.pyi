@@ -243,7 +243,7 @@ cuGraphAddHostNode: _cython_3_0_10.cython_function_or_method
 # cuGraphAddKernelNode: _cython_3_0_10.cython_function_or_method
 def cuGraphAddKernelNode(
     g: CUgraph,
-    deps: None,
+    deps: None | list[CUgraphNode],
     num_deps: int,
     params: CUDA_KERNEL_NODE_PARAMS,
 ) -> tuple[CUresult, CUgraphNode]: ...
