@@ -155,6 +155,7 @@ convention = "google"
 
 [tool.mypy]
 # https://mypy.readthedocs.io/en/latest/config_file.html#using-a-pyproject-toml-file
+mypy_path = "types"
 python_version = "3.12"
 pretty = true
 show_traceback = true
