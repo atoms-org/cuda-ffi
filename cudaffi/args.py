@@ -19,7 +19,7 @@ from typing import (
 from cuda import cuda, cudart
 
 from .device import CudaStream, init
-from .graph.graph import CudaGraph
+from .graph.graph import CudaGraph, GraphNode
 from .graph.memcpy import CudaMemcpyNode
 from .memory import (
     CudaDeviceMemory,
@@ -386,8 +386,8 @@ class CudaArgList:
             if arg.direction == CudaArgDirection.input or arg.direction == CudaArgDirection.inout:
                 arg.copy_to_device()
 
-    def create_copy_to_device_nodes(self, g: CudaGraph) -> list[CudaMemcpyNode]:
-        ret: list[CudaMemcpyNode] = []
+    def create_copy_to_device_nodes(self, g: CudaGraph) -> list[GraphNode]:
+        ret: list[GraphNode] = []
 
         for arg in self.args:
             if arg.is_pointer and (
