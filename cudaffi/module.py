@@ -11,7 +11,8 @@ from cuda import cuda, nvrtc
 
 from .args import CudaArgList, CudaArgSpecList, CudaArgType, CudaArgTypeList
 from .device import CudaDevice, CudaStream, init
-from .graph.graph import CudaGraph, GraphNode
+from .graph.graph import CudaGraph
+from .graph.kernel import CudaKernelNode
 from .utils import (
     checkCudaErrorsAndReturn,
     checkCudaErrorsNoReturn,
@@ -104,6 +105,7 @@ class CudaFunction:
         checkCudaErrorsAndReturn(ret)
 
         self._nv_kernel = ret[1]
+        assert isinstance(self._nv_kernel, cuda.CUfunction)
         self._cuda_module = mod
         self.name = name
         self._arg_types: CudaArgTypeList | None = None
@@ -346,52 +348,6 @@ class CudaModule:
     @staticmethod
     def clear_list() -> None:
         module_list.clear()
-
-
-class CudaKernelNode(GraphNode):
-    def __init__(
-        self,
-        g: CudaGraph,
-        fn: CudaFunction,
-        arg_list: CudaArgList,
-        dependencies: list[Any] = list(),
-        block: BlockSpec | None = None,
-        grid: GridSpec | None = None,
-    ) -> None:
-        super().__init__(g, "Kernel")
-        self.fn = fn
-        self.arg_list = arg_list
-
-        self.nv_args = arg_list.to_nv_args()
-
-        if grid is None:
-            grid = fn.default_grid
-        if block is None:
-            block = fn.default_block
-
-        self.block = block
-        self.grid = grid
-
-        deps: list[Any] | None = None
-        deps_len = 0
-        if len(dependencies) > 0:
-            deps = [n.nv_node for n in dependencies]
-            deps_len = len(deps)
-
-        self.nv_node_params: cuda.CUDA_KERNEL_NODE_PARAMS = cuda.CUDA_KERNEL_NODE_PARAMS()
-        self.nv_node_params.func = self.fn._nv_kernel
-        self.nv_node_params.gridDimX = grid[0]
-        self.nv_node_params.gridDimY = grid[1]
-        self.nv_node_params.gridDimZ = grid[2]
-        self.nv_node_params.blockDimX = block[0]
-        self.nv_node_params.blockDimY = block[1]
-        self.nv_node_params.blockDimZ = block[2]
-        self.nv_node_params.sharedMemBytes = 0
-        self.nv_node_params.kernelParams = self.nv_args
-
-        self.nv_node = checkCudaErrorsAndReturn(
-            cuda.cuGraphAddKernelNode(self.graph.nv_graph, None, 0, self.nv_node_params)
-        )
 
 
 class CudaFunctionCallGraph:

@@ -1,57 +1,60 @@
-# from typing import NewType
+from __future__ import annotations
 
-# from cuda import cuda
+from typing import TYPE_CHECKING
 
-# from ..args import CudaArgList
-# from ..module import BlockSpec, CudaFunction, GridSpec
-# from ..utils import checkCudaErrors
-# from .graph import CudaGraph, GraphNode
+from cuda import cuda
 
-# NvKernelNode = NewType("NvKernelNode", object)
+from ..args import CudaArgList
+from ..utils import checkCudaErrorsAndReturn
+from .graph import CudaGraph, GraphNode
+
+if TYPE_CHECKING:
+    from ..module import BlockSpec, CudaFunction, GridSpec
 
 
-# class CudaKernelNode(GraphNode):
-#     def __init__(
-#         self,
-#         g: CudaGraph,
-#         fn: CudaFunction,
-#         arg_list: CudaArgList,
-#         block: BlockSpec | None = None,
-#         grid: GridSpec | None = None,
-#     ) -> None:
-#         super().__init__(g, "Kernel")
-#         self.fn = fn
-#         self.arg_list = arg_list
+class CudaKernelNode(GraphNode):
+    def __init__(
+        self,
+        g: CudaGraph,
+        fn: CudaFunction,
+        arg_list: CudaArgList,
+        dependencies: list[GraphNode] = list(),
+        block: BlockSpec | None = None,
+        grid: GridSpec | None = None,
+    ) -> None:
+        super().__init__(g, "Kernel")
+        self.fn = fn
+        # TODO: not sure why mypy can't figure out the type of _nv_kernel
+        cuda_function: cuda.CUfunction = self.fn._nv_kernel  # type: ignore
+        self.arg_list = arg_list
 
-#         # arg_list = CudaArgList(args)
-#         # arg_list = CudaArgList(args, self.arg_types)
-#         # arg_list.copy_to_device()
-#         self.nv_args = arg_list.to_nv_args()
+        self.nv_args = arg_list.to_nv_args()
 
-#         print("nv_args", self.nv_args)
+        if grid is None:
+            grid = fn.default_grid
+        if block is None:
+            block = fn.default_block
 
-#         if grid is None:
-#             grid = fn.default_grid
-#         if block is None:
-#             block = fn.default_block
+        self.block = block
+        self.grid = grid
 
-#         self.block = block
-#         self.grid = grid
+        deps: list[cuda.CUgraphNode] | None = None
+        deps_len = 0
+        if len(dependencies) > 0:
+            deps = [n.nv_node for n in dependencies if n.nv_node is not None]
+            deps_len = len(deps)
 
-#         nv_kernel_node_params = cuda.CUDA_KERNEL_NODE_PARAMS()
-#         nv_kernel_node_params.func = self.fn._nv_kernel
-#         nv_kernel_node_params.gridDimX = self.grid[0]
-#         nv_kernel_node_params.gridDimY = self.grid[1]
-#         nv_kernel_node_params.gridDimZ = self.grid[2]
-#         nv_kernel_node_params.blockDimX = self.block[0]
-#         nv_kernel_node_params.blockDimY = self.block[1]
-#         nv_kernel_node_params.blockDimZ = self.block[2]
-#         nv_kernel_node_params.sharedMemBytes = 0
-#         nv_kernel_node_params.kernelParams = self.nv_args
-#         self.nv_kernel_node_params = nv_kernel_node_params
+        self.nv_node_params: cuda.CUDA_KERNEL_NODE_PARAMS = cuda.CUDA_KERNEL_NODE_PARAMS()
+        self.nv_node_params.func = cuda_function
+        self.nv_node_params.gridDimX = grid[0]
+        self.nv_node_params.gridDimY = grid[1]
+        self.nv_node_params.gridDimZ = grid[2]
+        self.nv_node_params.blockDimX = block[0]
+        self.nv_node_params.blockDimY = block[1]
+        self.nv_node_params.blockDimZ = block[2]
+        self.nv_node_params.sharedMemBytes = 0
+        self.nv_node_params.kernelParams = self.nv_args
 
-#         self.nv_kernel_node: NvKernelNode | None = None
-
-#         self.nv_node = checkCudaErrors(
-#             cuda.cuGraphAddKernelNode(self.graph.nv_graph, None, 0, self.nv_kernel_node_params)
-#         )
+        self.nv_node = checkCudaErrorsAndReturn(
+            cuda.cuGraphAddKernelNode(self.graph.nv_graph, deps, deps_len, self.nv_node_params)
+        )
