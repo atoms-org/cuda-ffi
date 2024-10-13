@@ -223,7 +223,15 @@ cuGetExportTable: _cython_3_0_10.cython_function_or_method
 cuGetProcAddress: _cython_3_0_10.cython_function_or_method
 cuGraphAddBatchMemOpNode: _cython_3_0_10.cython_function_or_method
 cuGraphAddChildGraphNode: _cython_3_0_10.cython_function_or_method
-cuGraphAddDependencies: _cython_3_0_10.cython_function_or_method
+
+# cuGraphAddDependencies: _cython_3_0_10.cython_function_or_method
+def cuGraphAddDependencies(
+    graph: CUgraph,
+    src: list[CUgraphNode],
+    to: list[CUgraphNode],
+    size: int,
+) -> tuple[CUresult]: ...
+
 cuGraphAddDependencies_v2: _cython_3_0_10.cython_function_or_method
 cuGraphAddEmptyNode: _cython_3_0_10.cython_function_or_method
 cuGraphAddEventRecordNode: _cython_3_0_10.cython_function_or_method
@@ -260,7 +268,10 @@ cuGraphBatchMemOpNodeSetParams: _cython_3_0_10.cython_function_or_method
 cuGraphChildGraphNodeGetGraph: _cython_3_0_10.cython_function_or_method
 cuGraphClone: _cython_3_0_10.cython_function_or_method
 cuGraphConditionalHandleCreate: _cython_3_0_10.cython_function_or_method
-cuGraphCreate: _cython_3_0_10.cython_function_or_method
+
+# cuGraphCreate: _cython_3_0_10.cython_function_or_method
+def cuGraphCreate(flags: int) -> tuple[CUresult, CUgraph]: ...
+
 cuGraphDebugDotPrint: _cython_3_0_10.cython_function_or_method
 cuGraphDestroy: _cython_3_0_10.cython_function_or_method
 cuGraphDestroyNode: _cython_3_0_10.cython_function_or_method
@@ -286,20 +297,43 @@ cuGraphExternalSemaphoresSignalNodeGetParams: _cython_3_0_10.cython_function_or_
 cuGraphExternalSemaphoresSignalNodeSetParams: _cython_3_0_10.cython_function_or_method
 cuGraphExternalSemaphoresWaitNodeGetParams: _cython_3_0_10.cython_function_or_method
 cuGraphExternalSemaphoresWaitNodeSetParams: _cython_3_0_10.cython_function_or_method
-cuGraphGetEdges: _cython_3_0_10.cython_function_or_method
+
+# cuGraphGetEdges: _cython_3_0_10.cython_function_or_method
+def cuGraphGetEdges(
+    graph: CUgraph,
+    size: int,
+) -> tuple[CUresult, list[CUgraphNode], list[CUgraphNode], int]: ...
+
 cuGraphGetEdges_v2: _cython_3_0_10.cython_function_or_method
-cuGraphGetNodes: _cython_3_0_10.cython_function_or_method
-cuGraphGetRootNodes: _cython_3_0_10.cython_function_or_method
+
+# cuGraphGetNodes: _cython_3_0_10.cython_function_or_method
+def cuGraphGetNodes(
+    graph: CUgraph,
+    size: int,
+) -> tuple[CUresult, list[CUgraphNode], int]: ...
+
+# cuGraphGetRootNodes: _cython_3_0_10.cython_function_or_method
+def cuGraphGetRootNodes(
+    graph: CUgraph,
+    size: int,
+) -> tuple[CUresult, list[CUgraphNode], int]: ...
+
 cuGraphHostNodeGetParams: _cython_3_0_10.cython_function_or_method
 cuGraphHostNodeSetParams: _cython_3_0_10.cython_function_or_method
-cuGraphInstantiate: _cython_3_0_10.cython_function_or_method
+
+# cuGraphInstantiate: _cython_3_0_10.cython_function_or_method
+def cuGraphInstantiate(graph: CUgraph, flags: int) -> tuple[CUresult, CUgraphExec]: ...
+
 cuGraphInstantiateWithParams: _cython_3_0_10.cython_function_or_method
 cuGraphKernelNodeCopyAttributes: _cython_3_0_10.cython_function_or_method
 cuGraphKernelNodeGetAttribute: _cython_3_0_10.cython_function_or_method
 cuGraphKernelNodeGetParams: _cython_3_0_10.cython_function_or_method
 cuGraphKernelNodeSetAttribute: _cython_3_0_10.cython_function_or_method
 cuGraphKernelNodeSetParams: _cython_3_0_10.cython_function_or_method
-cuGraphLaunch: _cython_3_0_10.cython_function_or_method
+
+# cuGraphLaunch: _cython_3_0_10.cython_function_or_method
+def cuGraphLaunch(exec: CUgraphExec, stream: CUstream) -> tuple[CUresult]: ...
+
 cuGraphMemAllocNodeGetParams: _cython_3_0_10.cython_function_or_method
 cuGraphMemFreeNodeGetParams: _cython_3_0_10.cython_function_or_method
 cuGraphMemcpyNodeGetParams: _cython_3_0_10.cython_function_or_method

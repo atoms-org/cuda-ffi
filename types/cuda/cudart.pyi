@@ -136,7 +136,12 @@ cudaGetTextureObjectResourceDesc: _cython_3_0_10.cython_function_or_method
 cudaGetTextureObjectResourceViewDesc: _cython_3_0_10.cython_function_or_method
 cudaGetTextureObjectTextureDesc: _cython_3_0_10.cython_function_or_method
 cudaGraphAddChildGraphNode: _cython_3_0_10.cython_function_or_method
-cudaGraphAddDependencies: _cython_3_0_10.cython_function_or_method
+
+# cudaGraphAddDependencies: _cython_3_0_10.cython_function_or_method
+def cudaGraphAddDependencies(
+    graph: cuda.cuda.CUgraph | cudaGraph_t,
+) -> tuple[cudaError_t]: ...
+
 cudaGraphAddDependencies_v2: _cython_3_0_10.cython_function_or_method
 cudaGraphAddEmptyNode: _cython_3_0_10.cython_function_or_method
 cudaGraphAddEventRecordNode: _cython_3_0_10.cython_function_or_method
