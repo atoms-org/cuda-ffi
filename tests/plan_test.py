@@ -49,7 +49,9 @@ class TestCudaPlanParsing:
 
         p = CudaPlan(myfn)
 
-        assert p.inputs == [("a", "Any"), ("b", "Any")]
+        assert len(p.inputs) == 2
+        assert p.inputs[0].name == "a"
+        assert p.inputs[1].name == "b"
         assert p.output_type == "Any"
 
     def test_function_definition_with_types(self) -> None:
@@ -58,7 +60,9 @@ class TestCudaPlanParsing:
 
         p = CudaPlan(myfn)
 
-        assert p.inputs == [("a", "str"), ("b", "int")]
+        assert len(p.inputs) == 2
+        assert p.inputs[0].name == "a"
+        assert p.inputs[1].name == "b"
         assert p.output_type == "str"
 
     def test_function_definition_return_none(self) -> None:
@@ -336,4 +340,6 @@ class TestCudaPlan:
         def myfn(s: str) -> None:
             printstr(s)
 
+        assert isinstance(myfn, CudaPlan)
+        assert len(myfn.vars) == 1
         myfn("this is a passed argument")

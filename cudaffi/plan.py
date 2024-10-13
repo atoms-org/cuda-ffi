@@ -88,7 +88,7 @@ class CudaPlan:
         # get args from function definition
         self.fn_def_ast = self.src_ast.body[0]
         self.fn_def_args_ast = self.fn_def_ast.args.args
-        self.inputs: list[tuple[str, str]] = []
+        self.inputs: list[CudaPlanVar] = []
         for n in range(len(self.fn_def_args_ast)):
             arg = self.fn_def_args_ast[n]
             arg_name = arg.arg
@@ -97,9 +97,7 @@ class CudaPlan:
                 annote = arg.annotation.id
             else:
                 annote = "Any"
-            self.inputs.append((arg_name, annote))
-            self.resolve_var(arg_name, CudaPlanVarType.arg)
-            # TODO: new CudaPlanVar
+            self.inputs.append(self.resolve_var(arg_name, CudaPlanVarType.arg))
 
         # decode overall return type
         if self.fn_def_ast.returns is not None:
@@ -153,6 +151,18 @@ class CudaPlan:
 
     def to_graph(self, *args: Any) -> CudaGraph:
         g = CudaGraph()
+
+        # clear any old var values
+        for var in self.vars:
+            if var.type == CudaPlanVarType.arg:
+                var.val = None
+
+        # assign input args
+        assert len(self.inputs) == len(args)  # TODO: custom exception
+        for i in range(len(args)):
+            self.inputs[i].val = args[i]
+
+        # create nodes for each step
         for step in self.steps:
             call_args: list[Any] = []
 
@@ -175,6 +185,9 @@ class CudaPlanVar:
         self.name = name
         self.type = type
         self.val = val
+
+    def __str__(self) -> str:
+        return f"CudaPlanVar(name='{self.name}', type='{self.type.name}', val='{self.val}')"
 
 
 class CudaPlanStep:
@@ -287,7 +300,7 @@ class CudaPlanStep:
         for arg in call.args:
             match arg:
                 case ast.Name():
-                    args_ret.append(CudaPlanVar(arg.id, CudaPlanVarType.arg))
+                    args_ret.append(self.plan.resolve_var(arg.id, CudaPlanVarType.arg))
                 case ast.Constant():
                     args_ret.append(
                         self.plan.resolve_var(
