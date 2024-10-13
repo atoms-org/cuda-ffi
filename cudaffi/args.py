@@ -225,7 +225,7 @@ class CudaArg:
 
         # finalize the data type
         if final_type_str is None:
-            raise CudaDataConversionError(data, arg_type, f"converter not found for data")
+            raise CudaDataConversionError(data, arg_type, f"converter not found for data: {data}")
         self.data_type = data_type_registry[final_type_str]
         self.ctype = self.data_type.get_ctype(data)
 
