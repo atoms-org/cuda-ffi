@@ -42,7 +42,6 @@ class CudaStream:
     #     checkCudaErrors(cuda.cuStreamDestroy(self.nv_stream))
 
     def synchronize(self) -> None:
-        print("cuStreamSynchronize")
         checkCudaErrorsNoReturn(cuda.cuStreamSynchronize(self.nv_stream))
 
     @staticmethod
@@ -108,7 +107,6 @@ class CudaDevice:
     @property
     def default_context(self) -> CudaContext:
         # TODO: cuDevicePrimaryCtxRetain?
-        print("getting default context")
         if len(self.contexts) == 0:
             self.contexts.append(self.create_context())
 
