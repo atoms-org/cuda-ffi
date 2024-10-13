@@ -370,8 +370,6 @@ class CudaFunctionCallGraph:
         # for n in start_nodes:
         #     kn.depends_on(n)
 
-        print(g.nv_nodes)
-
 
 module_list: list[CudaModule] = []
 BlockSpecCallback = Callable[[str, CudaModule, tuple[Any, ...]], BlockSpec]
