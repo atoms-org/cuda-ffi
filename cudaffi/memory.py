@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import ctypes
 from abc import ABC, abstractmethod
 
 from cuda import cudart
 
-from .core import init
+from .device import init
 from .utils import checkCudaErrorsAndReturn
 
 

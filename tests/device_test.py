@@ -1,4 +1,4 @@
-from cudaffi.core import CudaContext, CudaDevice, CudaStream, init
+from cudaffi.device import CudaContext, CudaDevice, CudaStream, init
 
 
 class TestDevice:

@@ -10,7 +10,7 @@ import numpy as np
 from cuda import cuda, nvrtc
 
 from .args import CudaArgList, CudaArgSpecList, CudaArgType, CudaArgTypeList
-from .core import CudaDevice, CudaStream, init
+from .device import CudaDevice, CudaStream, init
 from .graph.graph import CudaGraph, GraphNode
 from .utils import (
     checkCudaErrorsAndReturn,

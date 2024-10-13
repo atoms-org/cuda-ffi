@@ -4,7 +4,7 @@ from abc import ABC
 
 from cuda import cuda
 
-from ..core import CudaDevice, CudaStream, init
+from ..device import CudaDevice, CudaStream, init
 from ..utils import checkCudaErrorsAndReturn, checkCudaErrorsNoReturn
 
 

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from cudaffi.args import CudaDataConversionError
-from cudaffi.core import init
+from cudaffi.device import init
 from cudaffi.module import (
     BlockSpec,
     CudaCompilationError,

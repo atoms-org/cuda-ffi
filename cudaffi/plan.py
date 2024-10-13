@@ -7,10 +7,9 @@ from enum import Enum, auto
 from functools import update_wrapper
 from typing import Any, Callable, ParamSpec, TypeVar, cast, overload
 
-from cudaffi.core import init
-from cudaffi.module import CudaFunction, CudaFunctionCallGraph, CudaFunctionNameNotFound, CudaModule
-
+from .device import init
 from .graph.graph import CudaGraph
+from .module import CudaFunction, CudaFunctionCallGraph, CudaFunctionNameNotFound, CudaModule
 
 ModType = dict[str, str | CudaModule]
 AnyFn = Callable[[Any], Any]

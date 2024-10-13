@@ -18,7 +18,7 @@ from typing import (
 
 from cuda import cuda, cudart
 
-from .core import CudaStream, init
+from .device import CudaStream, init
 from .graph.graph import CudaGraph, GraphNode
 from .memory import (
     CudaDeviceMemory,
