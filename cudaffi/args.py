@@ -102,52 +102,9 @@ class CudaMemcpyNode(GraphNode):
                 self.nv_dst,
                 self.nv_src,
                 self.size,
-                cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
-                # cudart.cudaMemcpyKind.cudaMemcpyDefault,
-                # self.direction,
+                cudart.cudaMemcpyKind.cudaMemcpyDefault,
             )
         )
-
-        # ctx = CudaContext.get_default()
-
-        # # https://nvidia.github.io/cuda-python/module/driver.html?highlight=cugraphadd#cuda.bindings.driver.CUDA_MEMCPY3D
-        # params = cuda.CUDA_MEMCPY3D()
-        # params.srcXInBytes = self.size
-        # params.srcY = 1
-        # params.srcZ = 1
-        # params.srcHost = self.nv_src
-        # params.srcMemoryType = cuda.CUmemorytype.CU_MEMORYTYPE_HOST
-
-        # params.dstXInBytes = self.size
-        # params.dstY = 1
-        # params.dstZ = 1
-        # params.dstDevice = self.nv_dst
-        # params.dstMemoryType = cuda.CUmemorytype.CU_MEMORYTYPE_DEVICE
-
-        # params.WidthInBytes = self.size
-        # params.Depth = 1
-        # params.Height = 1
-
-        # # https://nvidia.github.io/cuda-python/module/driver.html?highlight=cugraphadd#cuda.bindings.driver.cuGraphAddMemcpyNode
-        # print("cuGraphAddMemcpyNode", self.graph.nv_graph, None, 0, params, ctx.nv_context)
-        # self.nv_node = checkCudaErrorsAndReturn(
-        #     cuda.cuGraphAddMemcpyNode(
-        #         self.graph.nv_graph,
-        #         None,
-        #         0,
-        #         params,
-        #         ctx.nv_context,
-        #     )
-        # )
-        # stream = CudaStream.get_default()
-        # checkCudaErrors(
-        #     cuda.cuMemcpyHtoDAsync(
-        #         self.nv_dst,
-        #         self.nv_src,
-        #         self.size,
-        #         stream.nv_stream,
-        #     )
-        # )
 
 
 class CudaDataType(ABC, Generic[DataType]):
@@ -299,9 +256,7 @@ class CudaArg:
         self,
         data: Any,
         arg_type: CudaArgType | None = None,
-        # data_type: CudaDataType[Any] | None = None,
     ) -> None:
-        # print(f"creating arg for '{data}' with {arg_type}")
         init()
 
         self.specified_type = arg_type
@@ -375,7 +330,6 @@ class CudaArg:
             self.nv_data = enc_data
 
     def copy_to_device(self, stream: CudaStream | None = None) -> None:
-        print("copy_to_device")
         if not self.is_pointer:
             return
 
@@ -388,7 +342,6 @@ class CudaArg:
         assert not isinstance(enc_data, int)
         buf = HostBuffer(enc_data)
 
-        print("cuMemcpyHtoDAsync")
         assert self.byte_size is not None
         checkCudaErrorsNoReturn(
             cuda.cuMemcpyHtoDAsync(
@@ -400,7 +353,6 @@ class CudaArg:
         )
 
     def create_copy_to_device_node(self, g: CudaGraph) -> CudaMemcpyNode | None:
-        print("create_copy_to_device_node")
         enc_data = self.data_type.encode(self.data)
         assert not isinstance(enc_data, int)
         buf = HostBuffer(enc_data)
@@ -411,7 +363,6 @@ class CudaArg:
         return n
 
     def copy_to_host(self, stream: CudaStream | None = None) -> None:
-        print("copy_to_host")
         if not self.is_pointer:
             return
 
@@ -567,30 +518,6 @@ class HostBuffer:
 
     def to_host_nv_data(self) -> cudart.cudaHostPtr | Buffer:
         return self.ptr
-
-    # def __init__(self, ptr: PointerOrHostMem) -> None:
-    #     self.ptr: Buffer | int | cudart.cudaHostPtr
-    #     self.size: int
-
-    #     if isinstance(ptr, tuple):
-    #         self.ptr = ptr[0]
-    #         self.sz = ptr[1]
-    #     elif isinstance(self.ptr, CudaHostMemory):
-    #         self.mem = ptr
-    #         self.ptr = ptr.nv_host_memory
-    #         self.sz = ptr.size
-
-    # def to_host_nv_data(self) -> int | cudart.cudaHostPtr | Buffer:
-    #     return self.ptr
-
-
-# def to_host_nv_data(data: PointerOrHostMem | int) -> int | NvHostMemory | Buffer:
-#     if isinstance(data, CudaHostMemory):
-#         return data.nv_host_memory
-#     elif isinstance(data, int):
-#         return data
-#     else:
-#         return data[0]
 
 
 # TODO: should we support collections.abc.memoryview everywhere we support Buffer?

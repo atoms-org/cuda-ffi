@@ -301,8 +301,6 @@ class TestCudaPlan:
         return CudaModule.from_file("tests/helpers/simple.cu")
 
     def test_to_graph_no_args(self, simple_mod: CudaModule) -> None:
-        mymod = CudaModule.from_file("tests/helpers/simple.cu")
-
         @cuda_plan
         @no_type_check
         def myfn() -> None:

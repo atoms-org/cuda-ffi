@@ -137,16 +137,16 @@ class CudaFunction:
         checkCudaErrorsNoReturn(
             cuda.cuLaunchKernel(
                 self._nv_kernel,
-                grid[0],  # grid x dim
-                grid[1],  # grid y dim
-                grid[2],  # grid z dim
-                block[0],  # block x dim
-                block[1],  # block y dim
-                block[2],  # block z dim
-                0,  # dynamic shared memory
-                stream.nv_stream,  # stream
-                nv_args,  # kernel arguments
-                0,  # extra (ignore)
+                grid[0],
+                grid[1],
+                grid[2],
+                block[0],
+                block[1],
+                block[2],
+                0,
+                stream.nv_stream,
+                nv_args,
+                0,
             )
         )
 
@@ -154,9 +154,7 @@ class CudaFunction:
 
         arg_list.copy_to_host()
 
-        # TODO
-        s = CudaStream.get_default()
-        s.synchronize()
+        stream.synchronize()
 
         return arg_list.get_outputs()
 

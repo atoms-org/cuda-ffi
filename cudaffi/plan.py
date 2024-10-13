@@ -281,8 +281,6 @@ class CudaPlanStep:
             case _:
                 raise CudaPlanException(f"unknown call name: '{call.func.__class__.__name__}'")
 
-        # TODO: resolve function from specified module
-
     def _decode_call_args(self, call: ast.Call) -> tuple[list[CudaPlanVar], dict[str, CudaPlanVar]]:
         args_ret: list[CudaPlanVar] = []
         kwargs_ret: dict[str, CudaPlanVar] = {}

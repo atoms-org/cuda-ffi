@@ -1,11 +1,5 @@
-import ctypes
-from collections.abc import Buffer
 from typing import (
-    TYPE_CHECKING,
     Any,
-    NewType,
-    Sequence,
-    TypeAlias,
     TypeVar,
     TypeVarTuple,
     cast,
@@ -14,15 +8,6 @@ from typing import (
 
 from cuda import cuda, cudart, nvrtc
 
-# TODO: remove from module.py and args.py
-BlockSpec = tuple[int, int, int]
-GridSpec = tuple[int, int, int]
-if TYPE_CHECKING:
-    AnyCType: TypeAlias = type[ctypes._SimpleCData[Any]]
-else:
-    AnyCType: TypeAlias = ctypes._SimpleCData
-NvDevPtr = NewType("NvDevPtr", int)
-ArgsSpec = int | tuple[Sequence[Buffer | NvDevPtr], Sequence[AnyCType]]
 NvErrorType = cuda.CUresult | cudart.cudaError_t | nvrtc.nvrtcResult
 
 T = TypeVar("T")
