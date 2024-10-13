@@ -2,16 +2,11 @@ from __future__ import annotations
 
 import ctypes
 from abc import ABC, abstractmethod
-from typing import NewType
 
 from cuda import cudart
 
 from .core import init
-from .utils import checkCudaErrors
-
-NvDeviceMemory = NewType("NvDeviceMemory", object)  # cuda.CUdeviceptr
-NvHostMemory = NewType("NvHostMemory", object)
-NvManagedMemory = NewType("NvManagedMemory", object)
+from .utils import checkCudaErrorsAndReturn
 
 
 class CudaMemory(ABC):
@@ -40,7 +35,7 @@ class CudaMemory(ABC):
 
     @property
     @abstractmethod
-    def dev_addr(self) -> NvDeviceMemory | NvManagedMemory: ...
+    def dev_addr(self) -> cudart.cudaDevPtr: ...
 
     def copy_to(self, dst_mem: CudaMemory) -> None:
         pass
@@ -62,11 +57,10 @@ class CudaHostMemory(CudaMemory):
         super().__init__(size)
 
         flags = cudart.cudaHostAllocDefault
-        self.nv_host_memory: NvHostMemory = checkCudaErrors(cudart.cudaHostAlloc(size, flags))
-        print("self.nv_host_memory", self.nv_host_memory.__class__)
+        self.nv_host_memory = checkCudaErrorsAndReturn(cudart.cudaHostAlloc(size, flags))
 
     @property
-    def dev_addr(self) -> NvDeviceMemory:
+    def dev_addr(self) -> cudart.cudaDevPtr:
         raise Exception("attempting to use host memory as device address")
 
 
@@ -74,11 +68,10 @@ class CudaDeviceMemory(CudaMemory):
     def __init__(self, size: int) -> None:
         super().__init__(size)
 
-        self.nv_device_memory: NvDeviceMemory = checkCudaErrors(cudart.cudaMalloc(size))
-        print("self.nv_device_memory", self.nv_device_memory.__class__)
+        self.nv_device_memory = checkCudaErrorsAndReturn(cudart.cudaMalloc(size))
 
     @property
-    def dev_addr(self) -> NvDeviceMemory:
+    def dev_addr(self) -> cudart.cudaDevPtr:
         return self.nv_device_memory
 
 
@@ -87,11 +80,8 @@ class CudaManagedMemory(CudaMemory):
         super().__init__(size)
 
         flags = cudart.cudaMemAttachGlobal
-        self.nv_managed_memory: NvManagedMemory = checkCudaErrors(
-            cudart.cudaMallocManaged(size, flags)
-        )
-        print("self.nv_managed_memory", self.nv_managed_memory.__class__)
+        self.nv_managed_memory = checkCudaErrorsAndReturn(cudart.cudaMallocManaged(size, flags))
 
     @property
-    def dev_addr(self) -> NvManagedMemory:
+    def dev_addr(self) -> cudart.cudaDevPtr:
         return self.nv_managed_memory

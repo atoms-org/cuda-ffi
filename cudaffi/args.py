@@ -5,19 +5,28 @@ from abc import ABC, abstractmethod
 from collections.abc import Buffer
 from enum import Enum, auto
 from types import GeneratorType
-from typing import TYPE_CHECKING, Any, Generator, Generic, TypeAlias, TypeVar
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Generator,
+    Generic,
+    Iterator,
+    Sequence,
+    TypeAlias,
+    TypeVar,
+)
 
-from cuda import cuda
+from cuda import cuda, cudart
 
 from .core import CudaStream, init
+from .graph.graph import CudaGraph, GraphNode
 from .memory import (
     CudaDeviceMemory,
     CudaHostMemory,
-    NvDeviceMemory,
-    NvHostMemory,
-    NvManagedMemory,
+    CudaManagedMemory,
+    CudaMemory,
 )
-from .utils import checkCudaErrors
+from .utils import checkCudaErrorsAndReturn, checkCudaErrorsNoReturn
 
 # XXX - https://mypy.readthedocs.io/en/stable/runtime_troubles.html#using-classes-that-are-generic-in-stubs-but-not-at-runtime
 if TYPE_CHECKING:
@@ -27,6 +36,118 @@ else:
 
 data_type_registry: DataTypeRegistry = {}
 DataType = TypeVar("DataType")
+
+
+class CudaMemcpyNode(GraphNode):
+    def __init__(
+        self, g: CudaGraph, src: HostBuffer | CudaMemory, dst: HostBuffer | CudaMemory, size: int
+    ) -> None:
+        super().__init__(g, "Memcpy")
+        self.src = src
+        self.dst = dst
+        self.size = size
+        self.src_type: str
+        self.dst_type: str
+        self.nv_src: int | Buffer | cudart.cudaHostPtr | cudart.cudaDevPtr
+        self.nv_dst: int | Buffer | cudart.cudaHostPtr | cudart.cudaDevPtr
+
+        match src:
+            case HostBuffer():
+                self.nv_src = src.to_host_nv_data()
+                self.src_type = "host"
+            case CudaHostMemory():
+                self.nv_src = src.dev_addr
+                self.src_type = "host"
+            case CudaManagedMemory():
+                self.nv_src = src.dev_addr
+                self.src_type = "managed"
+            case CudaDeviceMemory():
+                self.nv_src = src.dev_addr
+                self.src_type = "device"
+            case _:
+                raise Exception("unknown src memory type in CudaMemcpyNode")
+
+        match dst:
+            case HostBuffer():
+                self.nv_dst = dst.to_host_nv_data()
+                self.dst_type = "host"
+            case CudaHostMemory():
+                self.nv_dst = dst.dev_addr
+                self.dst_type = "host"
+            case CudaManagedMemory():
+                self.nv_dst = dst.dev_addr
+                self.dst_type = "managed"
+            case CudaDeviceMemory():
+                self.nv_dst = dst.dev_addr
+                self.dst_type = "device"
+            case _:
+                raise Exception("unknown src memory type in CudaMemcpyNode")
+
+        match self.src_type, self.dst_type:
+            case "host", "device":
+                self.direction = cudart.cudaMemcpyKind.cudaMemcpyHostToDevice
+            case "device", "host":
+                self.direction = cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost
+            case _:
+                # TODO: other types
+                raise Exception(f"{self.src_type} to {self.dst_type} copying not supported")
+
+        self.nv_memcpy_node: cuda.CUgraphNode | None = None
+
+        self.nv_node = checkCudaErrorsAndReturn(
+            cudart.cudaGraphAddMemcpyNode1D(
+                self.graph.nv_graph,
+                None,
+                0,
+                self.nv_dst,
+                self.nv_src,
+                self.size,
+                cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
+                # cudart.cudaMemcpyKind.cudaMemcpyDefault,
+                # self.direction,
+            )
+        )
+
+        # ctx = CudaContext.get_default()
+
+        # # https://nvidia.github.io/cuda-python/module/driver.html?highlight=cugraphadd#cuda.bindings.driver.CUDA_MEMCPY3D
+        # params = cuda.CUDA_MEMCPY3D()
+        # params.srcXInBytes = self.size
+        # params.srcY = 1
+        # params.srcZ = 1
+        # params.srcHost = self.nv_src
+        # params.srcMemoryType = cuda.CUmemorytype.CU_MEMORYTYPE_HOST
+
+        # params.dstXInBytes = self.size
+        # params.dstY = 1
+        # params.dstZ = 1
+        # params.dstDevice = self.nv_dst
+        # params.dstMemoryType = cuda.CUmemorytype.CU_MEMORYTYPE_DEVICE
+
+        # params.WidthInBytes = self.size
+        # params.Depth = 1
+        # params.Height = 1
+
+        # # https://nvidia.github.io/cuda-python/module/driver.html?highlight=cugraphadd#cuda.bindings.driver.cuGraphAddMemcpyNode
+        # print("cuGraphAddMemcpyNode", self.graph.nv_graph, None, 0, params, ctx.nv_context)
+        # self.nv_node = checkCudaErrorsAndReturn(
+        #     cuda.cuGraphAddMemcpyNode(
+        #         self.graph.nv_graph,
+        #         None,
+        #         0,
+        #         params,
+        #         ctx.nv_context,
+        #     )
+        # )
+        # stream = CudaStream.get_default()
+        # checkCudaErrors(
+        #     cuda.cuMemcpyHtoDAsync(
+        #         self.nv_dst,
+        #         self.nv_src,
+        #         self.size,
+        #         stream.nv_stream,
+        #     )
+        # )
 
 
 class CudaDataType(ABC, Generic[DataType]):
@@ -60,9 +181,8 @@ class CudaDataType(ABC, Generic[DataType]):
         force: bool = False,
         is_alias: bool = False,
     ) -> None:
-        global data_type_registry
         if name in data_type_registry and not force:
-            raise Exception(f"'{name}' already exists as a registered CudaDataType")
+            raise CudaArgTypeException(f"'{name}' already exists as a registered CudaDataType")
 
         dt = DataType(name)
         data_type_registry[name] = dt
@@ -91,6 +211,10 @@ class CudaArgTypeException(Exception):
 
 
 class CudaArgException(Exception):
+    pass
+
+
+class CudaDataTypeWarning(RuntimeWarning):
     pass
 
 
@@ -157,7 +281,7 @@ CudaArgSpecList = list[CudaArgSpec]
 NvKernelArgs = (
     int  # for None args
     | tuple[
-        tuple[Any, ...],  # list of data
+        tuple[Buffer | int, ...],  # list of data
         tuple[AnyCType, ...],  # list of data types
     ]
 )
@@ -177,12 +301,12 @@ class CudaArg:
         arg_type: CudaArgType | None = None,
         # data_type: CudaDataType[Any] | None = None,
     ) -> None:
-        print(f"creating arg for '{data}' with {arg_type}")
+        # print(f"creating arg for '{data}' with {arg_type}")
         init()
 
         self.specified_type = arg_type
         self.data = data
-        self.nv_data: int | NvDeviceMemory | NvManagedMemory
+        self.nv_data: int | cudart.cudaDevPtr
 
         # find the datatype
         final_type_str: str | None = None
@@ -192,7 +316,9 @@ class CudaArg:
         if arg_type is not None:
             final_type_str = arg_type.type
             if final_type_str not in data_type_registry:
-                raise Exception(f"'{final_type_str}' is not a registered data type")  # TODO
+                raise CudaArgTypeException(
+                    f"'{final_type_str}' is not a registered data type"
+                )  # TODO
             datatype = data_type_registry[final_type_str]
 
             if arg_type.is_input and not datatype.is_type(data):
@@ -204,15 +330,19 @@ class CudaArg:
                 print("arg is autoout, should I allocate memory or something?")
 
         # no desired type, try all of them
-        for type in data_type_registry:
-            if data_type_registry[type].is_type(data):
-                final_type_str = type
-                break
+        if final_type_str is None:
+            for type in data_type_registry:
+                if data_type_registry[type].is_type(data):
+                    final_type_str = type
+                    break
 
+        # finalize the data type
         if final_type_str is None:
             raise CudaDataConversionError(data, arg_type, f"converter not found for data")
-
         self.data_type = data_type_registry[final_type_str]
+        self.ctype = self.data_type.get_ctype(data)
+
+        # set the arg direction
         default_direction = CudaArgDirection[self.data_type.default_direction]
         self.direction: CudaArgDirection = (
             arg_type.direction if arg_type is not None else default_direction
@@ -226,7 +356,8 @@ class CudaArg:
             self.direction == CudaArgDirection.input or self.direction == CudaArgDirection.inout
         )
         self.is_autoout = self.direction == CudaArgDirection.autoout
-        self.ctype = self.data_type.get_ctype(data)
+
+        # do memory management
         self.is_pointer = self.ctype.__name__.endswith("_p")
         self.dev_mem: CudaDeviceMemory | None = None
         if arg_type is not None and arg_type.is_autoout:
@@ -239,9 +370,12 @@ class CudaArg:
             self.dev_mem = CudaDeviceMemory(self.byte_size)
             self.nv_data = self.dev_mem.nv_device_memory
         else:
-            self.nv_data = data
+            enc_data = self.data_type.encode(self.data)
+            assert isinstance(enc_data, int)
+            self.nv_data = enc_data
 
     def copy_to_device(self, stream: CudaStream | None = None) -> None:
+        print("copy_to_device")
         if not self.is_pointer:
             return
 
@@ -251,18 +385,33 @@ class CudaArg:
         assert self.dev_mem is not None
 
         enc_data = self.data_type.encode(self.data)
-        host_nv_data = to_host_nv_data(enc_data)
+        assert not isinstance(enc_data, int)
+        buf = HostBuffer(enc_data)
 
-        checkCudaErrors(
+        print("cuMemcpyHtoDAsync")
+        assert self.byte_size is not None
+        checkCudaErrorsNoReturn(
             cuda.cuMemcpyHtoDAsync(
                 self.dev_mem.nv_device_memory,
-                host_nv_data,
+                buf.to_host_nv_data(),
                 self.byte_size,
                 stream.nv_stream,
             )
         )
 
+    def create_copy_to_device_node(self, g: CudaGraph) -> CudaMemcpyNode | None:
+        print("create_copy_to_device_node")
+        enc_data = self.data_type.encode(self.data)
+        assert not isinstance(enc_data, int)
+        buf = HostBuffer(enc_data)
+
+        assert self.byte_size is not None
+        assert self.dev_mem is not None
+        n = CudaMemcpyNode(g, buf, self.dev_mem, self.byte_size)
+        return n
+
     def copy_to_host(self, stream: CudaStream | None = None) -> None:
+        print("copy_to_host")
         if not self.is_pointer:
             return
 
@@ -278,17 +427,17 @@ class CudaArg:
             self.data_generator: Generator[PointerOrHostMem, CudaDeviceMemory, Any] | None = (
                 dec_data
             )
-            host_buf: PointerOrHostMem = next(self.data_generator)
+            host_buf = HostBuffer(next(self.data_generator))
         else:
             self.data_generator = None
-            host_buf = dec_data  # type: ignore
+            host_buf = HostBuffer(dec_data)  # type: ignore
             self.output_data = host_buf
 
-        host_nv_data = to_host_nv_data(host_buf)
-
-        checkCudaErrors(
+        print("cuMemcpyDtoHAsync")
+        assert self.byte_size is not None
+        checkCudaErrorsNoReturn(
             cuda.cuMemcpyDtoHAsync(
-                host_nv_data,
+                host_buf.to_host_nv_data(),
                 self.dev_mem.nv_device_memory,
                 self.byte_size,
                 stream.nv_stream,
@@ -296,6 +445,7 @@ class CudaArg:
         )
 
     def get_output(self) -> Any:
+        print("get_output")
         if self.direction != CudaArgDirection.autoout:
             raise CudaArgException("Attempting to get output for non-'autoout' argument")
 
@@ -309,7 +459,7 @@ class CudaArg:
 
 
 class CudaArgList:
-    def __init__(self, args: tuple[Any], arg_types: CudaArgTypeList | None = None) -> None:
+    def __init__(self, args: Sequence[Any], arg_types: CudaArgTypeList | None = None) -> None:
         if arg_types is not None:
             expected_arg_count = len(arg_types)
 
@@ -333,7 +483,7 @@ class CudaArgList:
                 else:
                     new_args.append(None)
 
-            args = tuple(new_args)
+            args = new_args
 
         # create a CudaArg for every argument
         self.args: list[CudaArg] = []
@@ -342,10 +492,29 @@ class CudaArgList:
             arg_type = arg_types[n] if arg_types is not None else None
             self.args.append(CudaArg(arg, arg_type))
 
+    def __iter__(self) -> Iterator[CudaArg]:
+        return iter(self.args)
+
+    def __getitem__(self, idx: int) -> CudaArg:
+        return self.args[idx]
+
     def copy_to_device(self) -> None:
         for arg in self.args:
             if arg.direction == CudaArgDirection.input or arg.direction == CudaArgDirection.inout:
                 arg.copy_to_device()
+
+    def create_copy_to_device_nodes(self, g: CudaGraph) -> list[CudaMemcpyNode]:
+        ret: list[CudaMemcpyNode] = []
+
+        for arg in self.args:
+            if arg.is_pointer and (
+                arg.direction == CudaArgDirection.input or arg.direction == CudaArgDirection.inout
+            ):
+                n = arg.create_copy_to_device_node(g)
+                if n is not None:
+                    ret.append(n)
+
+        return ret
 
     def copy_to_host(self) -> None:
         for arg in self.args:
@@ -362,7 +531,6 @@ class CudaArgList:
 
         nv_data_args: list[Any] = []
         nv_type_args: list[Any] = []
-        print("to_nv_args", len(self.args))
         for arg in self.args:
             nv_data_args.append(arg.nv_data)
             nv_type_args.append(arg.ctype)
@@ -384,17 +552,50 @@ class CudaArgList:
             return ret
 
 
-def to_host_nv_data(data: PointerOrHostMem | int) -> int | NvHostMemory | Buffer:
-    if isinstance(data, CudaHostMemory):
-        return data.nv_host_memory
-    elif isinstance(data, int):
-        return data
-    else:
-        return data[0]
+class HostBuffer:
+    def __init__(self, ptr: PointerOrHostMem) -> None:
+        self.ptr: Buffer | cudart.cudaHostPtr
+        self.size: int
+
+        if isinstance(ptr, tuple):
+            self.ptr = ptr[0]
+            self.sz = ptr[1]
+        elif isinstance(self.ptr, CudaHostMemory):
+            self.mem = ptr
+            self.ptr = ptr.nv_host_memory
+            self.sz = ptr.size
+
+    def to_host_nv_data(self) -> cudart.cudaHostPtr | Buffer:
+        return self.ptr
+
+    # def __init__(self, ptr: PointerOrHostMem) -> None:
+    #     self.ptr: Buffer | int | cudart.cudaHostPtr
+    #     self.size: int
+
+    #     if isinstance(ptr, tuple):
+    #         self.ptr = ptr[0]
+    #         self.sz = ptr[1]
+    #     elif isinstance(self.ptr, CudaHostMemory):
+    #         self.mem = ptr
+    #         self.ptr = ptr.nv_host_memory
+    #         self.sz = ptr.size
+
+    # def to_host_nv_data(self) -> int | cudart.cudaHostPtr | Buffer:
+    #     return self.ptr
+
+
+# def to_host_nv_data(data: PointerOrHostMem | int) -> int | NvHostMemory | Buffer:
+#     if isinstance(data, CudaHostMemory):
+#         return data.nv_host_memory
+#     elif isinstance(data, int):
+#         return data
+#     else:
+#         return data[0]
 
 
 # TODO: should we support collections.abc.memoryview everywhere we support Buffer?
-MemPointer = Buffer | int
+# MemPointer = Buffer | int
+MemPointer = Buffer
 PointerAndSize = tuple[MemPointer, int]
 PointerOrHostMem = PointerAndSize | CudaHostMemory
 PointerGenerator = Generator[PointerOrHostMem, CudaDeviceMemory, DataType]

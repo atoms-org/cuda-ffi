@@ -1,33 +1,26 @@
 from __future__ import annotations
 
 from abc import ABC
-from typing import NewType
 
-from cuda import cuda, cudart
+from cuda import cuda
 
-from ..core import CudaStream, init
-from ..utils import checkCudaErrors
-
-NvGraphExec = NewType("NvGraphExec", object)  # cuda.CUgraphExec
-NvGraph = NewType("NvGraph", object)  # cuda.CUgraph
-NvGraphNode = NewType("NvGraphNode", object)  # cuda.CUgraphNode
+from ..core import CudaDevice, CudaStream, init
+from ..utils import checkCudaErrorsAndReturn, checkCudaErrorsNoReturn
 
 
 class GraphNode(ABC):
     def __init__(self, graph: CudaGraph, type_name: str) -> None:
         self.name = type_name
         self.graph = graph
-        self.nv_node: NvGraphNode | None = None
+        self.nv_node: cuda.CUgraphNode | None = None
+        self.graph.nodes.append(self)
 
     def depends_on(self, n: GraphNode) -> None:
         assert self.nv_node is not None
         assert n.nv_node is not None
-        print("self.nv_node", self.nv_node)
-        print("n.nv_node", n.nv_node)
-        checkCudaErrors(
-            cudart.cudaGraphAddDependencies(self.graph.nv_graph, [n.nv_node], [self.nv_node], 1)
+        checkCudaErrorsNoReturn(
+            cuda.cuGraphAddDependencies(self.graph.nv_graph, [n.nv_node], [self.nv_node], 1)
         )
-        # cudart.cudaGraphAddDependencies(self.graph.nv_graph, [self.nv_node], [n.nv_node], 1)
 
 
 class CudaGraph:
@@ -35,23 +28,28 @@ class CudaGraph:
     def __init__(self, *, stream: CudaStream | None = None) -> None:
         init()
 
+        if not CudaGraph.is_supported():
+            raise Exception("current device compute capability does not support CUDA graphs")
+
+        self.nodes: list[GraphNode] = []
+        self.nv_graph: cuda.CUgraph = checkCudaErrorsAndReturn(cuda.cuGraphCreate(0))
+
+    def run(self, stream: CudaStream | None = None) -> None:
+        print("*** RUNNING CUDAGRAPH ***")
+        self.nv_graph_exec = checkCudaErrorsAndReturn(cuda.cuGraphInstantiate(self.nv_graph, 0))
+
         if stream is None:
             stream = CudaStream.get_default()
 
-        self.stream = stream
-        self.nodes: list[GraphNode] = []
-        self.nv_graph: NvGraph = checkCudaErrors(cuda.cuGraphCreate(0))
+        checkCudaErrorsNoReturn(cuda.cuGraphLaunch(self.nv_graph_exec, stream.nv_stream))
 
-    def run(self) -> None:
-        self.nv_graph_exec: NvGraphExec = checkCudaErrors(
-            cudart.cudaGraphInstantiate(self.nv_graph, 0)
-        )
+        stream.synchronize()
 
-        checkCudaErrors(cudart.cudaGraphLaunch(self.nv_graph_exec, self.stream.nv_stream))
+    @classmethod
+    def is_supported(self, dev: CudaDevice | None = None) -> bool:
+        if dev is None:
+            dev = CudaDevice.get_default()
 
-        self.stream.synchronize()
-
-    def is_supported(self) -> bool:
         # int driverVersion = 0;
         # int deviceSupportsMemoryPools = 0;
         # cudaDriverGetVersion(&driverVersion);
@@ -59,25 +57,45 @@ class CudaGraph:
         #     cudaDeviceGetAttribute(&deviceSupportsMemoryPools, cudaDevAttrMemoryPoolsSupported, device);
         # }
         # deviceSupportsMemoryNodes = (driverVersion >= 11040) && (deviceSupportsMemoryPools != 0);
+
+        major, minor = dev.driver_version
+        if major > 11:
+            return True
+        if major == 11 and minor >= 4:
+            return True
+
         return False
 
+    @property
+    def nv_nodes(self, max: int = 1024) -> list[cuda.CUgraphNode]:
+        nodes, num_nodes = checkCudaErrorsAndReturn(cuda.cuGraphGetNodes(self.nv_graph, max))
+        return nodes[:num_nodes]
+
+    @property
+    def nv_root_nodes(self, max: int = 1024) -> list[cuda.CUgraphNode]:
+        nodes, num_nodes = checkCudaErrorsAndReturn(cuda.cuGraphGetRootNodes(self.nv_graph, max))
+        return nodes[:num_nodes]
+
+    @property
+    def nv_edges(self, max: int = 1024) -> list[tuple[cuda.CUgraphNode, cuda.CUgraphNode]]:
+        ret: list[tuple[cuda.CUgraphNode, cuda.CUgraphNode]] = []
+
+        from_nodes, to_nodes, num_nodes = checkCudaErrorsAndReturn(
+            cuda.cuGraphGetEdges(self.nv_graph, max)
+        )
+
+        for n in range(num_nodes):
+            ret.append((from_nodes[n], to_nodes[n]))
+
+        return ret
+
+    ######################
+    # Future expansions?
+    ######################
     # cuStreamBeginCaptureToGraph
     # instantiate()
     # upload()
     # launch()
-
-    # def add_kernel_node(self, fn: CudaFunction) -> None:
-    #     kernelNodeParams = cuda.CUDA_KERNEL_NODE_PARAMS()
-    #     self.fn = fn
-    #     kernelNodeParams.func = fn.kernel  # type: ignore
-    #     kernelNodeParams.gridDimX = 1
-    #     kernelNodeParams.gridDimY = kernelNodeParams.gridDimZ = 1
-    #     kernelNodeParams.blockDimX = 1
-    #     kernelNodeParams.blockDimY = kernelNodeParams.blockDimZ = 1
-    #     kernelNodeParams.sharedMemBytes = 0
-    #     # kernelNodeParams.kernelParams = kernelArgs
-    #     kernelNodeParams.kernelParams = 0
-    #     checkCudaErrors(cuda.cuGraphAddKernelNode(self.nv_graph, None, 0, kernelNodeParams))
 
     # add_memcpy_node()
     # add_memset_node()
@@ -93,12 +111,6 @@ class CudaGraph:
     # add_mem_free_node()
     # mem_trim()
     # clone()
-    @property
-    def nv_nodes(self) -> list[NvGraphNode]:
-        nodes: list[NvGraphNode]
-        numNodes: int
-        nodes, numNodes = checkCudaErrors(cudart.cudaGraphGetNodes(self.nv_graph))
-        return nodes
 
     # root_nodes[]
     # edges[]

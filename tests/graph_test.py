@@ -1,5 +1,6 @@
 from cudaffi.graph.graph import CudaGraph
-from cudaffi.graph.malloc import CudaMallocNode
+
+# from cudaffi.graph.malloc import CudaMallocNode
 
 # from cudaffi.graph.malloc import CudaMallocNode, CudaMemAddr
 # from cudaffi.graph.memcpy import CudaMemcpyNode
@@ -59,14 +60,14 @@ class TestGraph:
 #         g.run()
 
 
-class TestMallocNode:
-    def test_exists(self) -> None:
-        g = CudaGraph()
-        CudaMallocNode(g, 1)
+# class TestMallocNode:
+#     def test_exists(self) -> None:
+#         g = CudaGraph()
+#         CudaMallocNode(g, 1)
 
-    # def test_does_malloc(self) -> None:
-    #     g = CudaGraph()
-    #     mem = CudaMallocNode(g, 4)
-    #     arr = np.array([1, 2, 3, 4], dtype=np.uint32)
-    #     CudaMemcpyNode(g, cast(CudaMemAddr, arr.ctypes.data), mem.addr, 4, "host_to_device")
-    #     g.run()
+#     # def test_does_malloc(self) -> None:
+#     #     g = CudaGraph()
+#     #     mem = CudaMallocNode(g, 4)
+#     #     arr = np.array([1, 2, 3, 4], dtype=np.uint32)
+#     #     CudaMemcpyNode(g, cast(CudaMemAddr, arr.ctypes.data), mem.addr, 4, "host_to_device")
+#     #     g.run()

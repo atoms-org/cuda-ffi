@@ -1,14 +1,8 @@
 from __future__ import annotations
 
-from typing import NewType, cast
-
 from cuda import cuda
 
-from .utils import checkCudaErrors
-
-NvDevice = NewType("NvDevice", object)  # cuda.CUdevice
-NvContext = NewType("NvContext", object)  # cuda.CUcontext
-NvStream = NewType("NvStream", object)  # cuda.CUstream
+from .utils import checkCudaErrorsAndReturn, checkCudaErrorsNoReturn
 
 _default_device: CudaDevice | None = None
 _default_context: CudaContext | None = None
@@ -23,7 +17,7 @@ class CudaInitializationException(Exception):
 def init(flags: int = 0, force: bool = False) -> None:
     global _initialized
     if not _initialized or force:
-        checkCudaErrors(cuda.cuInit(flags))
+        checkCudaErrorsNoReturn(cuda.cuInit(flags))
         _initialized = True
         dev = CudaDevice(0)
         CudaDevice.set_default(dev)
@@ -41,14 +35,15 @@ class CudaStream:
     def __init__(self, flags: int = cuda.CUstream_flags.CU_STREAM_DEFAULT) -> None:
         init()
 
-        self.nv_stream: NvStream = checkCudaErrors(cuda.cuStreamCreate(flags))
+        self.nv_stream = checkCudaErrorsAndReturn(cuda.cuStreamCreate(flags))
 
     # def __del__(self) -> None:
     #     self.synchronize()
     #     checkCudaErrors(cuda.cuStreamDestroy(self.nv_stream))
 
     def synchronize(self) -> None:
-        checkCudaErrors(cuda.cuStreamSynchronize(self.nv_stream))
+        print("cuStreamSynchronize")
+        checkCudaErrorsNoReturn(cuda.cuStreamSynchronize(self.nv_stream))
 
     @staticmethod
     def set_default(stream: CudaStream) -> None:
@@ -68,10 +63,10 @@ class CudaContext:
     def __init__(self, dev: "CudaDevice") -> None:
         init()
 
-        self.nv_context: NvContext = checkCudaErrors(cuda.cuCtxCreate(0, dev.nv_device))
+        self.nv_context = checkCudaErrorsAndReturn(cuda.cuCtxCreate(0, dev.nv_device))
 
     def __del__(self) -> None:
-        checkCudaErrors(cuda.cuCtxDestroy(self.nv_context))
+        checkCudaErrorsNoReturn(cuda.cuCtxDestroy(self.nv_context))
 
     @staticmethod
     def set_default(ctx: CudaContext) -> None:
@@ -96,7 +91,7 @@ class CudaDevice:
         self.streams: list[CudaStream] = []
 
         # Retrieve handle for device 0
-        self.nv_device: NvDevice = checkCudaErrors(cuda.cuDeviceGet(device_id))
+        self.nv_device = checkCudaErrorsAndReturn(cuda.cuDeviceGet(device_id))
 
     def create_context(self) -> CudaContext:
         # Create context
@@ -107,7 +102,7 @@ class CudaDevice:
 
     @property
     def name(self) -> str:
-        name: bytes = checkCudaErrors(cuda.cuDeviceGetName(512, self.nv_device))
+        name: bytes = checkCudaErrorsAndReturn(cuda.cuDeviceGetName(512, self.nv_device))
         return name.decode()
 
     @property
@@ -129,12 +124,12 @@ class CudaDevice:
     @property
     def compute_capability(self) -> tuple[int, int]:
         # Derive target architecture for device 0
-        major = checkCudaErrors(
+        major = checkCudaErrorsAndReturn(
             cuda.cuDeviceGetAttribute(
                 cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, self.nv_device
             )
         )
-        minor = checkCudaErrors(
+        minor = checkCudaErrorsAndReturn(
             cuda.cuDeviceGetAttribute(
                 cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, self.nv_device
             )
@@ -143,7 +138,7 @@ class CudaDevice:
 
     @property
     def driver_version(self) -> tuple[int, int]:
-        version_num = checkCudaErrors(cuda.cuDriverGetVersion())
+        version_num = checkCudaErrorsAndReturn(cuda.cuDriverGetVersion())
         major = version_num // 1000
         minor = (version_num - (major * 1000)) // 10
         return (major, minor)
@@ -165,4 +160,4 @@ class CudaDevice:
     def count() -> int:
         init()
 
-        return cast(int, checkCudaErrors(cuda.cuDeviceGetCount()))
+        return checkCudaErrorsAndReturn(cuda.cuDeviceGetCount())

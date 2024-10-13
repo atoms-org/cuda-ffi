@@ -1,3 +1,5 @@
+from typing import no_type_check
+
 import pytest
 
 from cudaffi.module import CudaFunction, CudaModule
@@ -298,13 +300,42 @@ class TestCudaPlan:
     def simple_mod(self) -> CudaModule:
         return CudaModule.from_file("tests/helpers/simple.cu")
 
-    def test_to_graph_basic(self, simple_mod: CudaModule) -> None:
+    def test_to_graph_no_args(self, simple_mod: CudaModule) -> None:
         mymod = CudaModule.from_file("tests/helpers/simple.cu")
 
-        @cuda_plan(modules={"mymod": simple_mod})
+        @cuda_plan
+        @no_type_check
         def myfn() -> None:
-            mymod.simple()
+            simple()
 
         assert isinstance(myfn, CudaPlan)
         g = myfn.to_graph()
         g.run()
+
+    def test_call_constant_arg(self, simple_mod: CudaModule) -> None:
+        # mymod = CudaModule.from_file("tests/helpers/string_arg.cu")
+        code = """
+        __global__ void doit(char *str) {
+            printf("this is a test\\n");
+            printf("ptr: %p\\n", str);
+            printf("passed argument was: %s\\n", str);
+        }
+        """
+        mymod = CudaModule(code)
+
+        @cuda_plan
+        @no_type_check
+        def myfn() -> None:
+            doit("hello from userland")
+
+        myfn()
+
+    def test_call_passed_arg(self, simple_mod: CudaModule) -> None:
+        mymod = CudaModule.from_file("tests/helpers/string_arg.cu")
+
+        @cuda_plan
+        @no_type_check
+        def myfn(s: str) -> None:
+            printstr(s)
+
+        myfn("this is a passed argument")

@@ -1,23 +1,24 @@
-from __future__ import annotations
-
-import warnings
-
 """CUDA Source Modules"""
 
+from __future__ import annotations
+
 import ctypes
-from typing import Any, Callable, NewType
+import warnings
+from typing import Any, Callable, Sequence
 
 import numpy as np
 from cuda import cuda, nvrtc
 
 from .args import CudaArgList, CudaArgSpecList, CudaArgType, CudaArgTypeList
 from .core import CudaDevice, CudaStream, init
-from .utils import checkCudaErrors
+from .graph.graph import CudaGraph, GraphNode
+from .utils import (
+    checkCudaErrorsAndReturn,
+    checkCudaErrorsNoReturn,
+)
 
-NvProgram = NewType("NvProgram", object)  # nvrtc.nvrtcGetProgram
 BlockSpec = tuple[int, int, int]
 GridSpec = tuple[int, int, int]
-NvKernel = NewType("NvKernel", object)  # cuda.CUkernel
 
 
 class CudaDataException(Exception):
@@ -94,13 +95,15 @@ class CudaFunction:
 
     def __init__(self, mod: CudaModule, name: str) -> None:
         ret = cuda.cuModuleGetFunction(mod.nv_module, name.encode())
+
+        # if not found, return None
         if ret[0] == cuda.CUresult.CUDA_ERROR_NOT_FOUND:
             raise CudaFunctionNameNotFound(f"CUDA function '{name}' does not exist")
 
-        # check for other errors
-        checkCudaErrors(ret)
+        # raise other errors
+        checkCudaErrorsAndReturn(ret)
 
-        self._nv_kernel: NvKernel = ret[1]
+        self._nv_kernel = ret[1]
         self._cuda_module = mod
         self.name = name
         self._arg_types: CudaArgTypeList | None = None
@@ -131,7 +134,7 @@ class CudaFunction:
         if block is None:
             block = self.default_block
 
-        checkCudaErrors(
+        checkCudaErrorsNoReturn(
             cuda.cuLaunchKernel(
                 self._nv_kernel,
                 grid[0],  # grid x dim
@@ -224,7 +227,7 @@ class CudaModule:
         self.fn_cache: dict[str, CudaFunction] = {}
 
         # Create program
-        self.nv_prog: NvProgram = checkCudaErrors(
+        self.nv_prog = checkCudaErrorsAndReturn(
             nvrtc.nvrtcCreateProgram(self.code.encode(), self.progname.encode(), 0, [], [])
         )
 
@@ -238,9 +241,9 @@ class CudaModule:
             self.nv_prog, len(self.compile_args), self.compile_args
         )
 
-        log_sz = checkCudaErrors(nvrtc.nvrtcGetProgramLogSize(self.nv_prog))
+        log_sz = checkCudaErrorsAndReturn(nvrtc.nvrtcGetProgramLogSize(self.nv_prog))
         buf = b" " * log_sz
-        checkCudaErrors(nvrtc.nvrtcGetProgramLog(self.nv_prog, buf))
+        checkCudaErrorsNoReturn(nvrtc.nvrtcGetProgramLog(self.nv_prog, buf))
         self.compile_log = buf.decode()
 
         # check if the compiler didn't like the arguments
@@ -274,17 +277,16 @@ class CudaModule:
                 )
             )
 
-        checkCudaErrors(compile_result)
+        checkCudaErrorsNoReturn(compile_result)
 
         # Get PTX from compilation
-        self.nv_ptx_size = checkCudaErrors(nvrtc.nvrtcGetPTXSize(self.nv_prog))
-        self.ptx = b" " * self.nv_ptx_size
-        checkCudaErrors(nvrtc.nvrtcGetPTX(self.nv_prog, self.ptx))
+        self.nv_ptx_size = checkCudaErrorsAndReturn(nvrtc.nvrtcGetPTXSize(self.nv_prog))
+        self.ptx_buf = b" " * self.nv_ptx_size
+        checkCudaErrorsNoReturn(nvrtc.nvrtcGetPTX(self.nv_prog, self.ptx_buf))
 
         # Load PTX as module data
-        self.ptx = np.char.array(self.ptx)
-        ret = cuda.cuModuleLoadData(self.ptx.ctypes.data)
-        self.nv_module = checkCudaErrors(ret)
+        self.ptx = np.char.array(self.ptx_buf)
+        self.nv_module = checkCudaErrorsAndReturn(cuda.cuModuleLoadData(self.ptx.ctypes.data))
 
         module_list.append(self)
 
@@ -346,6 +348,75 @@ class CudaModule:
     @staticmethod
     def clear_list() -> None:
         module_list.clear()
+
+
+class CudaKernelNode(GraphNode):
+    def __init__(
+        self,
+        g: CudaGraph,
+        fn: CudaFunction,
+        arg_list: CudaArgList,
+        dependencies: list[Any] = list(),
+        block: BlockSpec | None = None,
+        grid: GridSpec | None = None,
+    ) -> None:
+        super().__init__(g, "Kernel")
+        self.fn = fn
+        self.arg_list = arg_list
+
+        self.nv_args = arg_list.to_nv_args()
+
+        if grid is None:
+            grid = fn.default_grid
+        if block is None:
+            block = fn.default_block
+
+        self.block = block
+        self.grid = grid
+
+        deps: list[Any] | None = None
+        deps_len = 0
+        if len(dependencies) > 0:
+            deps = [n.nv_node for n in dependencies]
+            deps_len = len(deps)
+
+        self.nv_node_params: cuda.CUDA_KERNEL_NODE_PARAMS = cuda.CUDA_KERNEL_NODE_PARAMS()
+        self.nv_node_params.func = self.fn._nv_kernel
+        self.nv_node_params.gridDimX = grid[0]
+        self.nv_node_params.gridDimY = grid[1]
+        self.nv_node_params.gridDimZ = grid[2]
+        self.nv_node_params.blockDimX = block[0]
+        self.nv_node_params.blockDimY = block[1]
+        self.nv_node_params.blockDimZ = block[2]
+        self.nv_node_params.sharedMemBytes = 0
+        self.nv_node_params.kernelParams = self.nv_args
+
+        self.nv_node = checkCudaErrorsAndReturn(
+            cuda.cuGraphAddKernelNode(self.graph.nv_graph, None, 0, self.nv_node_params)
+        )
+
+
+class CudaFunctionCallGraph:
+    def __init__(self, g: CudaGraph, fn: CudaFunction, args: Sequence[Any]) -> None:
+        self.graph = g
+        self.fn = fn
+
+        arg_list = CudaArgList(args, fn.arg_types)
+
+        # create input nodes
+        start_nodes = arg_list.create_copy_to_device_nodes(g)
+
+        # TODO: create output nodes
+
+        # create kernel node
+        kn = CudaKernelNode(g, fn, arg_list, dependencies=start_nodes)
+
+        # create dependencies
+        # print("start_nodes", start_nodes)
+        # for n in start_nodes:
+        #     kn.depends_on(n)
+
+        print(g.nv_nodes)
 
 
 module_list: list[CudaModule] = []

@@ -7,10 +7,10 @@ from enum import Enum, auto
 from functools import update_wrapper
 from typing import Any, Callable, ParamSpec, TypeVar, cast, overload
 
-from cudaffi.module import CudaFunction, CudaFunctionNameNotFound, CudaModule
+from cudaffi.core import init
+from cudaffi.module import CudaFunction, CudaFunctionCallGraph, CudaFunctionNameNotFound, CudaModule
 
 from .graph.graph import CudaGraph
-from .graph.kernel import CudaKernelNode
 
 ModType = dict[str, str | CudaModule]
 AnyFn = Callable[[Any], Any]
@@ -39,7 +39,7 @@ def cuda_plan(
     # Without arguments `func` is passed directly to the decorator
     if func is not None:
         if not callable(func):
-            raise TypeError("Not a callable. Did you use a non-keyword argument?")
+            raise TypeError("CudaPlan is not a callable. Did you use a non-function argument?")
         return cast(Callable[P, R], CudaPlan(func, modules=modules))
 
     # With arguments, we need to return a function that accepts the function
@@ -64,6 +64,8 @@ class CudaPlan:
         fn: Callable[..., Any],
         modules: dict[str, CudaModule] | None = None,
     ) -> None:
+        init()
+
         self.src_text = textwrap.dedent(inspect.getsource(fn))
         self.src_ast = ast.parse(self.src_text)
         self.vars: list[CudaPlanVar] = []
@@ -130,7 +132,8 @@ class CudaPlan:
                 no_more = True
 
     def __call__(self, *args: Any, **kwargs: Any) -> None:
-        print("calling CudaPlan")
+        g = self.to_graph(*args)
+        g.run()
 
     def resolve_var(self, name: str, type: CudaPlanVarType, val: Any = None) -> CudaPlanVar:
         # always make new constants
@@ -149,12 +152,17 @@ class CudaPlan:
         self.vars.append(v)
         return v
 
-    def to_graph(self) -> CudaGraph:
+    def to_graph(self, *args: Any) -> CudaGraph:
         g = CudaGraph()
         for step in self.steps:
+            call_args: list[Any] = []
+
+            for v in step.input_vars:
+                call_args.append(v.val)
+
             if step.call_fn is not None:
-                CudaKernelNode(g, step.call_fn)
-                # TODO: map variables to arguments
+                CudaFunctionCallGraph(g, step.call_fn, call_args)
+
         return g
 
 
