@@ -52,15 +52,6 @@ class CudaMemcpyNode(GraphNode):
             case _:
                 raise Exception("unknown src memory type in CudaMemcpyNode")
 
-        # match self.src_type, self.dst_type:
-        #     case "host", "device":
-        #         self.direction = cudart.cudaMemcpyKind.cudaMemcpyHostToDevice
-        #     case "device", "host":
-        #         self.direction = cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost
-        #     case _:
-        #         # TODO: other types
-        #         raise Exception(f"{self.src_type} to {self.dst_type} copying not supported")
-
         self.nv_memcpy_node: cuda.CUgraphNode | None = None
 
         self.nv_node = checkCudaErrorsAndReturn(
