@@ -25,6 +25,9 @@ from .memory import (
     CudaHostMemory,
     CudaManagedMemory,
     CudaMemory,
+    HostBuffer,
+    PointerOrHostMem,
+    PointerOrPointerGenerator,
 )
 from .utils import checkCudaErrorsAndReturn, checkCudaErrorsNoReturn
 
@@ -83,14 +86,14 @@ class CudaMemcpyNode(GraphNode):
             case _:
                 raise Exception("unknown src memory type in CudaMemcpyNode")
 
-        match self.src_type, self.dst_type:
-            case "host", "device":
-                self.direction = cudart.cudaMemcpyKind.cudaMemcpyHostToDevice
-            case "device", "host":
-                self.direction = cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost
-            case _:
-                # TODO: other types
-                raise Exception(f"{self.src_type} to {self.dst_type} copying not supported")
+        # match self.src_type, self.dst_type:
+        #     case "host", "device":
+        #         self.direction = cudart.cudaMemcpyKind.cudaMemcpyHostToDevice
+        #     case "device", "host":
+        #         self.direction = cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost
+        #     case _:
+        #         # TODO: other types
+        #         raise Exception(f"{self.src_type} to {self.dst_type} copying not supported")
 
         self.nv_memcpy_node: cuda.CUgraphNode | None = None
 
@@ -501,29 +504,3 @@ class CudaArgList:
             return ret[0]
         else:
             return ret
-
-
-class HostBuffer:
-    def __init__(self, ptr: PointerOrHostMem) -> None:
-        self.ptr: Buffer | cudart.cudaHostPtr
-        self.size: int
-
-        if isinstance(ptr, tuple):
-            self.ptr = ptr[0]
-            self.sz = ptr[1]
-        elif isinstance(self.ptr, CudaHostMemory):
-            self.mem = ptr
-            self.ptr = ptr.nv_host_memory
-            self.sz = ptr.size
-
-    def to_host_nv_data(self) -> cudart.cudaHostPtr | Buffer:
-        return self.ptr
-
-
-# TODO: should we support collections.abc.memoryview everywhere we support Buffer?
-# MemPointer = Buffer | int
-MemPointer = Buffer
-PointerAndSize = tuple[MemPointer, int]
-PointerOrHostMem = PointerAndSize | CudaHostMemory
-PointerGenerator = Generator[PointerOrHostMem, CudaDeviceMemory, DataType]
-PointerOrPointerGenerator = PointerOrHostMem | PointerGenerator[DataType]

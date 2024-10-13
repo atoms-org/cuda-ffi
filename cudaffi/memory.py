@@ -1,11 +1,32 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Buffer
+from typing import Generator, TypeVar
 
 from cuda import cudart
 
 from .device import init
 from .utils import checkCudaErrorsAndReturn
+
+T = TypeVar("T")
+
+
+class HostBuffer:
+    def __init__(self, ptr: PointerOrHostMem) -> None:
+        self.ptr: Buffer | cudart.cudaHostPtr
+        self.size: int
+
+        if isinstance(ptr, tuple):
+            self.ptr = ptr[0]
+            self.sz = ptr[1]
+        elif isinstance(self.ptr, CudaHostMemory):
+            self.mem = ptr
+            self.ptr = ptr.nv_host_memory
+            self.sz = ptr.size
+
+    def to_host_nv_data(self) -> cudart.cudaHostPtr | Buffer:
+        return self.ptr
 
 
 class CudaMemory(ABC):
@@ -55,3 +76,12 @@ class CudaManagedMemory(CudaMemory):
     @property
     def dev_addr(self) -> cudart.cudaDevPtr:
         return self.nv_managed_memory
+
+
+# TODO: should we support collections.abc.memoryview everywhere we support Buffer?
+# MemPointer = Buffer | int
+MemPointer = Buffer
+PointerAndSize = tuple[MemPointer, int]
+PointerOrHostMem = PointerAndSize | CudaHostMemory
+PointerGenerator = Generator[PointerOrHostMem, CudaDeviceMemory, T]
+PointerOrPointerGenerator = PointerOrHostMem | PointerGenerator[T]
