@@ -81,6 +81,10 @@ class CudaContext:
         return _default_context
 
 
+class UnknownAttribute(Exception):
+    pass
+
+
 class CudaDevice:
     def __init__(self, device_id: int = 0) -> None:
         init()
@@ -99,10 +103,40 @@ class CudaDevice:
     def create_stream(self) -> CudaStream:
         return CudaStream()
 
+    def get_attribute(self, attr: str) -> int:
+        attr = attr.upper()
+        if not attr.startswith("CU_DEVICE_ATTRIBUTE_"):
+            attr = "CU_DEVICE_ATTRIBUTE_" + attr
+
+        if not hasattr(cuda.CUdevice_attribute, attr):
+            raise UnknownAttribute(f"unknown CUDA device attribute: '{attr}'")
+
+        attr_val = getattr(cuda.CUdevice_attribute, attr)
+        val = checkCudaErrorsAndReturn(cuda.cuDeviceGetAttribute(attr_val, self.nv_device))
+
+        return val
+
+    @property
+    def all_attribute_names(self) -> list[str]:
+        attr_names = [
+            v.name.replace("CU_DEVICE_ATTRIBUTE_", "").lower() for v in cuda.CUdevice_attribute
+        ]
+        # XXX: remove the last one, which is "max"
+        # XXX: CUDA Python seems to have an off-by-one error where requesting
+        # CU_DEVICE_ATTRIBUTE_D3D12_CIG_SUPPORTED results in an error
+        return attr_names[:-2]
+
     @property
     def name(self) -> str:
-        name: bytes = checkCudaErrorsAndReturn(cuda.cuDeviceGetName(512, self.nv_device))
-        return name.decode()
+        name_buf: bytes = checkCudaErrorsAndReturn(cuda.cuDeviceGetName(512, self.nv_device))
+        strlen = 0
+        for strlen in range(len(name_buf)):
+            if name_buf[strlen] == 0:
+                break
+
+        name_str = name_buf.decode()
+
+        return name_str[:strlen]
 
     @property
     def default_context(self) -> CudaContext:
@@ -121,17 +155,8 @@ class CudaDevice:
 
     @property
     def compute_capability(self) -> tuple[int, int]:
-        # Derive target architecture for device 0
-        major = checkCudaErrorsAndReturn(
-            cuda.cuDeviceGetAttribute(
-                cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR, self.nv_device
-            )
-        )
-        minor = checkCudaErrorsAndReturn(
-            cuda.cuDeviceGetAttribute(
-                cuda.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR, self.nv_device
-            )
-        )
+        major = self.get_attribute("compute_capability_major")
+        minor = self.get_attribute("compute_capability_minor")
         return (major, minor)
 
     @property
