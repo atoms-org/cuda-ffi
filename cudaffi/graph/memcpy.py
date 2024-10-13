@@ -1,91 +1,76 @@
-# from enum import Enum
-# from typing import NewType
+from collections.abc import Buffer
 
-# from cuda import cudart
+from cuda import cuda, cudart
 
-# from ..memory import CudaMemory
-# from ..utils import checkCudaErrors
-# from .graph import CudaGraph, GraphNode
-
-# NvMemcpyNode = NewType("NvMemcpyNode", object)
+from ..memory import CudaDeviceMemory, CudaHostMemory, CudaManagedMemory, CudaMemory, HostBuffer
+from ..utils import checkCudaErrorsAndReturn
+from .graph import CudaGraph, GraphNode
 
 
-# class CopyDirection(Enum):
-#     device_to_host = 1
-#     host_to_device = 2
+class CudaMemcpyNode(GraphNode):
+    def __init__(
+        self, g: CudaGraph, src: HostBuffer | CudaMemory, dst: HostBuffer | CudaMemory, size: int
+    ) -> None:
+        super().__init__(g, "Memcpy")
+        self.src = src
+        self.dst = dst
+        self.size = size
+        self.src_type: str
+        self.dst_type: str
+        self.nv_src: int | Buffer | cudart.cudaHostPtr | cudart.cudaDevPtr
+        self.nv_dst: int | Buffer | cudart.cudaHostPtr | cudart.cudaDevPtr
 
+        match src:
+            case HostBuffer():
+                self.nv_src = src.to_host_nv_data()
+                self.src_type = "host"
+            case CudaHostMemory():
+                self.nv_src = src.dev_addr
+                self.src_type = "host"
+            case CudaManagedMemory():
+                self.nv_src = src.dev_addr
+                self.src_type = "managed"
+            case CudaDeviceMemory():
+                self.nv_src = src.dev_addr
+                self.src_type = "device"
+            case _:
+                raise Exception("unknown src memory type in CudaMemcpyNode")
 
-# class CudaMemcpyNode(GraphNode):
-#     def __init__(
-#         self,
-#         g: CudaGraph,
-#         src: CudaMemory,
-#         dst: CudaMemory,
-#         size: int,
-#         direction: str,
-#     ) -> None:
-#         super().__init__(g, "Memcpy")
-#         self.src = src
-#         self.dst = dst
-#         self.size = size
-#         self.direction = CopyDirection[direction]
+        match dst:
+            case HostBuffer():
+                self.nv_dst = dst.to_host_nv_data()
+                self.dst_type = "host"
+            case CudaHostMemory():
+                self.nv_dst = dst.dev_addr
+                self.dst_type = "host"
+            case CudaManagedMemory():
+                self.nv_dst = dst.dev_addr
+                self.dst_type = "managed"
+            case CudaDeviceMemory():
+                self.nv_dst = dst.dev_addr
+                self.dst_type = "device"
+            case _:
+                raise Exception("unknown src memory type in CudaMemcpyNode")
 
-#         # TODO: make sure src and dst aren't host memory?
-#         self.nv_src = self.src.dev_addr
-#         self.nv_dst = self.dst.dev_addr
+        # match self.src_type, self.dst_type:
+        #     case "host", "device":
+        #         self.direction = cudart.cudaMemcpyKind.cudaMemcpyHostToDevice
+        #     case "device", "host":
+        #         self.direction = cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost
+        #     case _:
+        #         # TODO: other types
+        #         raise Exception(f"{self.src_type} to {self.dst_type} copying not supported")
 
-#         self.nv_memcpy_node: NvMemcpyNode | None = None
+        self.nv_memcpy_node: cuda.CUgraphNode | None = None
 
-#         nv_memcpy_params = cudart.cudaMemcpy3DParms()
-#         # nv_memcpy_params.srcArray = None
-#         # nv_memcpy_params.srcPos = cudart.make_cudaPos(0, 0, 0)
-#         # nv_memcpy_params.srcPtr = cudart.make_cudaPitchedPtr(
-#         #     self.nv_src, np.dtype(np.int32).itemsize, 1, 1
-#         # )
-#         # nv_memcpy_params.dstArray = None
-#         # nv_memcpy_params.dstPos = cudart.make_cudaPos(0, 0, 0)
-#         # nv_memcpy_params.dstPtr = cudart.make_cudaPitchedPtr(
-#         #     self.nv_dst, np.dtype(np.int32).itemsize, 1, 1
-#         # )
-#         # nv_memcpy_params.srcPtr = self.nv_src
-#         # nv_memcpy_params.dstPtr = self.nv_dst
-#         print("self.nv_src", self.nv_src)
-#         print("self.nv_dst", self.nv_dst)
-#         src_pp = cudart.make_cudaPitchedPtr(self.nv_src, 1, self.size, 1)
-#         dst_pp = cudart.make_cudaPitchedPtr(self.nv_dst, 1, self.size, 1)
-#         # nv_memcpy_params.extent = cudart.make_cudaExtent(np.dtype(np.float64).itemsize, 1, 1)
-#         if self.direction == CopyDirection.device_to_host:
-#             nv_memcpy_params.kind = cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost
-#             self.direction = cudart.cudaMemcpyKind.cudaMemcpyDeviceToHost
-#         else:
-#             nv_memcpy_params.kind = cudart.cudaMemcpyKind.cudaMemcpyHostToDevice
-#             self.direction = cudart.cudaMemcpyKind.cudaMemcpyHostToDevice
-#         # self.nv_memcpy_params = nv_memcpy_params
-
-#         # self.nv_node = checkCudaErrors(
-#         #     cudart.cudaGraphAddMemcpyNode(self.graph.nv_graph, None, 0, self.nv_memcpy_params)
-#         # )
-
-#         foo = checkCudaErrors(cudart.cudaMallocHost(self.size))
-#         self.nv_node = checkCudaErrors(
-#             cudart.cudaGraphAddMemcpyNode1D(
-#                 self.graph.nv_graph,
-#                 None,
-#                 0,
-#                 bytearray([1, 2, 3, 4]),
-#                 foo,
-#                 self.size,
-#                 cudart.cudaMemcpyKind.cudaMemcpyHostToHost,
-#             )
-#         )
-#         self.nv_node = checkCudaErrors(
-#             cudart.cudaGraphAddMemcpyNode1D(
-#                 self.graph.nv_graph,
-#                 None,
-#                 0,
-#                 foo,
-#                 self.nv_dst,
-#                 self.size,
-#                 cudart.cudaMemcpyKind.cudaMemcpyHostToDevice,
-#             )
-#         )
+        self.nv_node = checkCudaErrorsAndReturn(
+            cudart.cudaGraphAddMemcpyNode1D(
+                self.graph.nv_graph,
+                None,
+                0,
+                self.nv_dst,
+                self.nv_src,
+                self.size,
+                cudart.cudaMemcpyKind.cudaMemcpyDefault,
+            )
+        )
