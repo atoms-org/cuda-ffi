@@ -186,7 +186,6 @@ class TestFunction:
         mod = CudaModule.from_file("tests/helpers/string_arg.cu")
 
         def default_block_fn(name: str, mod: CudaModule, args: Any) -> BlockSpec:
-            print("args", args)
             return (1, 1, 1)
 
         mod.printstr.default_block = default_block_fn
@@ -211,9 +210,7 @@ class TestFunction:
     def test_inout(self) -> None:
         mod = CudaModule.from_file("tests/helpers/doublify.cu")
         arr = np.random.randn(4, 4).astype(np.float32)
-        print("input", arr)
         mod.doublify(arr, block=(4, 4, 1))
-        print("output", arr)
 
     def test_autoout(self) -> None:
         mod = CudaModule.from_file("tests/helpers/strstr.cu")
