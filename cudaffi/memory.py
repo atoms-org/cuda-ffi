@@ -14,7 +14,7 @@ T = TypeVar("T")
 
 class HostBuffer:
     def __init__(self, ptr: PointerOrHostMem) -> None:
-        self.ptr: Buffer | cudart.cudaHostPtr
+        self.ptr: int | Buffer | cudart.cudaHostPtr
         self.size: int
 
         if isinstance(ptr, tuple):
@@ -25,7 +25,7 @@ class HostBuffer:
             self.ptr = ptr.nv_host_memory
             self.sz = ptr.size
 
-    def to_host_nv_data(self) -> cudart.cudaHostPtr | Buffer:
+    def to_host_nv_data(self) -> cudart.cudaHostPtr | Buffer | int:
         return self.ptr
 
 
@@ -80,7 +80,7 @@ class CudaManagedMemory(CudaMemory):
 
 # TODO: should we support collections.abc.memoryview everywhere we support Buffer?
 # MemPointer = Buffer | int
-MemPointer = Buffer
+MemPointer = int | Buffer
 PointerAndSize = tuple[MemPointer, int]
 PointerOrHostMem = PointerAndSize | CudaHostMemory
 PointerGenerator = Generator[PointerOrHostMem, CudaDeviceMemory, T]
