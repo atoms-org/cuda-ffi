@@ -69,11 +69,12 @@ class CudaIntDataType(CudaDataType[int]):
     def decode(
         self, data: int | None = None, size_hint: int | None = None
     ) -> Generator[tuple[Buffer, int], Any, int]:
-        if size_hint is None or size_hint < 1:
-            size_hint = 8
+        raise Exception("decoding to int not supported")
+        # if size_hint is None or size_hint < 1:
+        #     size_hint = 8
 
-        ba = bytearray(size_hint)
+        # ba = bytearray(size_hint)
 
-        yield (ba, size_hint)
+        # yield (ba, size_hint)
 
-        return int.from_bytes(ba, signed=self.signed)
+        # return int.from_bytes(ba, signed=self.signed)
