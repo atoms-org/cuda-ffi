@@ -72,10 +72,11 @@ from cudaffi import CudaModule, cuda_plan
 import numpy as np
 
 mod = CudaModule.load_file("test_graph.cu")
-mod.start_ker.arg_types = [("input", "numpy"), ("output", "bytes"), ("output", "int32")]
-mod.middle_ker.arg_types = [("input", "bytes"), ("input", "int32"), ("output", "bytes"), ("output", "int16")]
-mod.end_ker.arg_types = [("input", "bytes"), ("input", "int16"), ("output", "int16")]
+mod.start_ker.arg_types = [("input", "numpy"), ("autoout", "bytes"), ("autoout", "int32")]
+mod.middle_ker.arg_types = [("input", "bytes"), ("input", "int32"), ("autoout", "bytes"), ("autoout", "int16")]
+mod.end_ker.arg_types = [("input", "bytes"), ("input", "int16"), ("autoout", "int16")]
 
+# creates a graph with all the memcpy, memalloc, and kernel nodes and their dependencies
 @cuda_plan
 def my_plan(arr: np.nparray[Any, Any]) -> int:
   b, sz = mod.start_ker(arr)
