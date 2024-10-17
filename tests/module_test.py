@@ -210,7 +210,42 @@ class TestFunction:
     def test_inout(self) -> None:
         mod = CudaModule.from_file("tests/helpers/doublify.cu")
         arr = np.random.randn(4, 4).astype(np.float32)
+        arrExpected = arr * 2
         mod.doublify(arr, block=(4, 4, 1))
+        assert np.allclose(arr, arrExpected)
+
+    def test_saxpy_inout(self) -> None:
+        mod = CudaModule.from_file("tests/helpers/saxpy_inout.cu")
+        NUM_THREADS = 512  # Threads per block
+        NUM_BLOCKS = 32768  # Blocks per grid
+
+        # configure our function
+        mod.saxpy.arg_types = [
+            ("input", "int"),
+            ("input", "float"),
+            ("input", "numpy"),
+            ("inout", "numpy"),
+        ]
+        mod.saxpy.default_block = (NUM_THREADS, 1, 1)
+        mod.saxpy.default_grid = (NUM_BLOCKS, 1, 1)
+
+        # setup args
+        n = NUM_THREADS * NUM_BLOCKS
+        a = 2.0
+        hX = np.random.rand(n).astype(dtype=np.float32)
+        hY = np.random.rand(n).astype(dtype=np.float32)
+
+        # find final value
+        hFinal = a * hX + hY
+        # print("hY in", hY)
+        # print("hFinal", hFinal)
+
+        # call function
+        mod.saxpy(n, a, hX, hY)
+        # print("hY out", hY)
+
+        # check return value
+        assert np.allclose(hY, hFinal)
 
     def test_autoout(self) -> None:
         mod = CudaModule.from_file("tests/helpers/strstr.cu")
