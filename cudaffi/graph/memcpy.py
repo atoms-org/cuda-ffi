@@ -17,8 +17,8 @@ class CudaMemcpyNode(GraphNode):
         self.size = size
         self.src_type: str
         self.dst_type: str
-        self.nv_src: int | Buffer | cudart.cudaHostPtr | cudart.cudaDevPtr
-        self.nv_dst: int | Buffer | cudart.cudaHostPtr | cudart.cudaDevPtr
+        self.nv_src: int | float | bool | Buffer | cudart.cudaHostPtr | cudart.cudaDevPtr
+        self.nv_dst: int | float | bool | Buffer | cudart.cudaHostPtr | cudart.cudaDevPtr
 
         match src:
             case HostBuffer():
