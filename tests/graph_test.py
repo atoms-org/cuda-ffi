@@ -1,4 +1,7 @@
-from cudaffi.graph.graph import CudaGraph
+from cuda import cuda
+
+from cudaffi.graph.graph import CudaGraph, GraphNode
+from cudaffi.utils import checkCudaErrorsAndReturn
 
 # from cudaffi.graph.malloc import CudaMallocNode
 
@@ -8,9 +11,41 @@ from cudaffi.graph.graph import CudaGraph
 # from cudaffi.memory import CudaMemory
 
 
+class TGraphNode(GraphNode):
+    def __init__(self, g: CudaGraph, name: str) -> None:
+        super().__init__(g, name)
+        self.nv_node = checkCudaErrorsAndReturn(cuda.cuGraphAddEmptyNode(g.nv_graph, None, 0))
+
+
 class TestGraph:
     def test_exists(self) -> None:
         CudaGraph()
+
+    def test_to_networkx(self) -> None:
+        g = CudaGraph()
+        n1 = TGraphNode(g, "Bob")
+        n2 = TGraphNode(g, "Sam")
+        n1.depends_on(n2)
+
+        nxg = g.to_networkx()
+        nodes = list(nxg.nodes)
+        assert len(nodes) == 2
+        edges = list(nxg.edges)
+        assert len(edges) == 1
+        assert edges == [(id(n2), id(n1))]
+
+
+class TestGraphNode:
+    def test_dep(self) -> None:
+        g = CudaGraph()
+        n1 = TGraphNode(g, "Bob")
+        n2 = TGraphNode(g, "Sam")
+        n1.depends_on(n2)
+
+        assert len(g.nodes) == 2
+        assert n1.before == [n2]
+        assert n2.after == [n1]
+        assert g.roots == [n2]
 
 
 # class TestKernelNode:

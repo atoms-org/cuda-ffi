@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC
 
+import networkx as nx
 from cuda import cuda
 
 from ..device import CudaDevice, CudaStream, init
@@ -14,8 +15,13 @@ class GraphNode(ABC):
         self.graph = graph
         self.nv_node: cuda.CUgraphNode | None = None
         self.graph.nodes.append(self)
+        self.before: list[GraphNode] = []
+        self.after: list[GraphNode] = []
 
     def depends_on(self, n: GraphNode) -> None:
+        self.before.append(n)
+        n.after.append(self)
+
         assert self.nv_node is not None
         assert n.nv_node is not None
         checkCudaErrorsNoReturn(
@@ -45,6 +51,18 @@ class CudaGraph:
 
         stream.synchronize()
 
+    def to_networkx(self) -> nx.DiGraph:
+        nxg = nx.DiGraph()
+
+        for n in self.nodes:
+            nxg.add_node(id(n))
+
+        for n1 in self.nodes:
+            for n2 in n1.after:
+                nxg.add_edge(id(n1), id(n2))
+
+        return nxg
+
     @classmethod
     def is_supported(self, dev: CudaDevice | None = None) -> bool:
         if dev is None:
@@ -68,6 +86,10 @@ class CudaGraph:
             return True
 
         return False
+
+    @property
+    def roots(self) -> list[GraphNode]:
+        return [n for n in self.nodes if len(n.before) == 0]
 
     @property
     def nv_nodes(self, max: int = 1024) -> list[cuda.CUgraphNode]:
