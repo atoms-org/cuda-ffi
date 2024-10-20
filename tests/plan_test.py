@@ -1,5 +1,6 @@
 from typing import no_type_check
 
+import numpy as np
 import pytest
 
 from cudaffi.module import CudaFunction, CudaModule
@@ -41,7 +42,9 @@ class TestPlan:
 class TestCudaPlanParsing:
     @pytest.fixture(autouse=True)
     def simple_mod(self) -> CudaModule:
-        return CudaModule.from_file("tests/helpers/simple.cu")
+        mod = CudaModule.from_file("tests/helpers/simple.cu")
+        mod.simple.arg_types = []
+        return mod
 
     def test_function_definition(self) -> None:
         def myfn(a, b):  # type: ignore
@@ -293,16 +296,16 @@ class TestCudaPlanParsing:
             return 42
             simple()  # type: ignore
 
-        with pytest.raises(CudaPlanException) as e:
+        with pytest.raises(CudaPlanException, match="statements found after return in CudaPlan"):
             CudaPlan(myfn)
-
-        assert e.value.message == "statements found after return in CudaPlan"
 
 
 class TestCudaPlan:
     @pytest.fixture(autouse=True)
     def simple_mod(self) -> CudaModule:
-        return CudaModule.from_file("tests/helpers/simple.cu")
+        mod = CudaModule.from_file("tests/helpers/simple.cu")
+        mod.simple.arg_types = []
+        return mod
 
     def test_to_graph_no_args(self, simple_mod: CudaModule) -> None:
         @cuda_plan
@@ -314,26 +317,33 @@ class TestCudaPlan:
         g = myfn.to_graph()
         g.run()
 
-    def test_call_constant_arg(self, simple_mod: CudaModule) -> None:
-        # mymod = CudaModule.from_file("tests/helpers/string_arg.cu")
-        code = """
-        __global__ void doit(char *str) {
-            printf("this is a test\\n");
-            printf("ptr: %p\\n", str);
-            printf("passed argument was: %s\\n", str);
-        }
-        """
-        mymod = CudaModule(code)
+    def test_call_constant_arg(self) -> None:
+        mymod = CudaModule.from_file("tests/helpers/string_arg.cu")
+        mymod.doit.arg_types = [("input", "str")]
 
         @cuda_plan
         @no_type_check
         def myfn() -> None:
-            doit("hello from userland")
+            printstr("hello from userland")
 
         myfn()
 
-    def test_call_passed_arg(self, simple_mod: CudaModule) -> None:
+    def test_call_passed_int(self) -> None:
+        mymod = CudaModule.from_file("tests/helpers/one_arg.cu")
+        mymod.one.arg_types = [("input", "int")]
+
+        @cuda_plan
+        @no_type_check
+        def myfn(s: int) -> None:
+            one(s)
+
+        assert isinstance(myfn, CudaPlan)
+        assert len(myfn.vars) == 1
+        myfn(42)
+
+    def test_call_passed_str(self) -> None:
         mymod = CudaModule.from_file("tests/helpers/string_arg.cu")
+        mymod.printstr.arg_types = [("input", "str")]
 
         @cuda_plan
         @no_type_check
@@ -342,4 +352,29 @@ class TestCudaPlan:
 
         assert isinstance(myfn, CudaPlan)
         assert len(myfn.vars) == 1
-        myfn("this is a passed argument")
+        myfn("this is a test")
+
+    def test_call_passed_vars(self) -> None:
+        mymod = CudaModule.from_file("tests/helpers/doublify.cu")
+        mymod.doublify.arg_types = [("inout", "numpy")]
+        mymod.doublify.default_block = (5, 1, 1)
+
+        arr = np.arange(5, dtype=np.float32)
+        expectedArr = arr * 4
+
+        @cuda_plan
+        @no_type_check
+        def myfn(a) -> None:
+            doublify(a)
+            doublify(a)
+
+        myfn(arr)
+        assert np.allclose(arr, expectedArr)
+
+    def test_wrong_number_of_args_in_step(self, simple_mod: CudaModule) -> None:
+        with pytest.raises(CudaPlanException, match="function 'simple' didn't have any arg types"):
+
+            @cuda_plan
+            @no_type_check
+            def myfn(a, b, c) -> None:
+                simple(a, b, c)

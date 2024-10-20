@@ -12,7 +12,6 @@ from cuda import cuda, nvrtc
 from .args import CudaArgList, CudaArgSpecList, CudaArgType, CudaArgTypeList
 from .device import CudaDevice, CudaStream, init
 from .graph.graph import CudaGraph
-from .graph.kernel import CudaKernelNode
 from .utils import (
     checkCudaErrorsAndReturn,
     checkCudaErrorsNoReturn,
@@ -355,16 +354,17 @@ class CudaFunctionCallGraph:
         self.graph = g
         self.fn = fn
 
+        print("args", args)
+
         arg_list = CudaArgList(args, fn.arg_types)
 
         # create input nodes
-        start_nodes = arg_list.create_copy_to_device_nodes(g)
+        self.start_nodes = arg_list.create_copy_to_device_nodes(g)
 
         # TODO: create output nodes
 
         # create kernel node
-        kn = CudaKernelNode(g, fn, arg_list, dependencies=start_nodes)
-
+        # kn = CudaKernelNode(g, fn, arg_list, dependencies=self.start_nodes)
         # create dependencies
         # print("start_nodes", start_nodes)
         # for n in start_nodes:

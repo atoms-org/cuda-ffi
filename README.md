@@ -45,7 +45,7 @@ out = numpy.zeros_like(a)
 
 # type checking
 mod.multiply_them(out, a, [1,2,3,4])
-# TypeError: expected numpy for arg1
+# TypeError: expected numpy for arg2
 
 # manually set block and grid size
 mod.multiply_them(out, a, b, block=(400,1,1), grid=(1,1,1))

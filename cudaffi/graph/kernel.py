@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 from cuda import cuda
 
-from ..args import CudaArgList
 from ..utils import checkCudaErrorsAndReturn
 from .graph import CudaGraph, GraphNode
 
@@ -17,18 +16,14 @@ class CudaKernelNode(GraphNode):
         self,
         g: CudaGraph,
         fn: CudaFunction,
-        arg_list: CudaArgList,
+        nv_args: cuda.cudaKernelParams,
         dependencies: list[GraphNode] = list(),
         block: BlockSpec | None = None,
         grid: GridSpec | None = None,
     ) -> None:
         super().__init__(g, "Kernel")
         self.fn = fn
-        # TODO: not sure why mypy can't figure out the type of _nv_kernel
-        cuda_function: cuda.CUfunction = self.fn._nv_kernel  # type: ignore
-        self.arg_list = arg_list
-
-        self.nv_args = arg_list.to_nv_args()
+        self.nv_args = nv_args
 
         if grid is None:
             grid = fn.default_grid
@@ -45,7 +40,7 @@ class CudaKernelNode(GraphNode):
             deps_len = len(deps)
 
         self.nv_node_params: cuda.CUDA_KERNEL_NODE_PARAMS = cuda.CUDA_KERNEL_NODE_PARAMS()
-        self.nv_node_params.func = cuda_function
+        self.nv_node_params.func = self.fn._nv_kernel
         self.nv_node_params.gridDimX = grid[0]
         self.nv_node_params.gridDimY = grid[1]
         self.nv_node_params.gridDimZ = grid[2]

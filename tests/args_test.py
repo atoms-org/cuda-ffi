@@ -97,3 +97,15 @@ class TestArgs:
         assert arg.direction == CudaArgDirection.inout
         assert arg.specified_type is None
         assert arg.ctype == ctypes.c_void_p
+
+    def test_float(self) -> None:
+        arg = CudaArg(3.14)
+        assert not arg.is_pointer
+        assert arg.dev_mem is None
+        assert isinstance(arg.data, float)
+        assert arg.data == 3.14
+        # assert isinstance(arg.nv_data, bytearray)
+        # assert arg.byte_size == 4
+        # assert arg.direction == CudaArgDirection.inout
+        # assert arg.specified_type is None
+        # assert arg.ctype == ctypes.c_float

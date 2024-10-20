@@ -56,7 +56,7 @@ class CudaDataType(ABC, Generic[DataType]):
     def get_ctype(self, data: DataType) -> AnyCType: ...
 
     @abstractmethod
-    def encode(self, data: DataType) -> PointerOrHostMem | int: ...
+    def encode(self, data: DataType) -> PointerOrHostMem | int | float | bool: ...
 
     @abstractmethod
     def decode(
@@ -84,6 +84,41 @@ class CudaDataType(ABC, Generic[DataType]):
         global data_type_registry
         return data_type_registry
 
+    @staticmethod
+    def resolve(
+        data: Any,
+        arg_type: CudaArgType | None = None,
+    ) -> CudaDataType[Any]:
+        final_type_str: str | None = None
+        data_type_registry = CudaDataType.get_registry()
+
+        # we have a desired arg datatype
+        if arg_type is not None:
+            final_type_str = arg_type.type
+            if final_type_str not in data_type_registry:
+                raise CudaArgTypeException(
+                    f"'{final_type_str}' is not a registered data type"
+                )  # TODO
+            datatype = data_type_registry[final_type_str]
+
+            if arg_type.is_input and not datatype.is_type(data):
+                raise CudaDataConversionError(
+                    data, arg_type, f"data could not be converted to '{final_type_str}'"
+                )
+
+        # no desired type, try all of them
+        if final_type_str is None:
+            for type in data_type_registry:
+                if data_type_registry[type].is_type(data):
+                    final_type_str = type
+                    break
+
+        # finalize the data type
+        if final_type_str is None:
+            raise CudaDataConversionError(data, arg_type, f"converter not found for data: {data}")
+
+        return data_type_registry[final_type_str]
+
 
 DataTypeRegistry = dict[str, CudaDataType[Any]]
 
@@ -93,6 +128,22 @@ class CudaArgDirection(Enum):
     output = auto()
     inout = auto()
     autoout = auto()
+
+    @staticmethod
+    def is_input(d: CudaArgDirection) -> bool:
+        return (d == CudaArgDirection.input) or (d == d == CudaArgDirection.inout)
+
+    @staticmethod
+    def is_output(d: CudaArgDirection) -> bool:
+        return (
+            (d == CudaArgDirection.output)
+            or (d == d == CudaArgDirection.inout)
+            or (d == d == CudaArgDirection.autoout)
+        )
+
+    @staticmethod
+    def is_autoout(d: CudaArgDirection) -> bool:
+        return d == CudaArgDirection.autoout
 
 
 class CudaArgTypeException(Exception):
@@ -125,15 +176,9 @@ class CudaArgType:
         self.type = type
         self.name = name
         self.byte_size = byte_size
-        self.is_output = (
-            self.direction == CudaArgDirection.output
-            or self.direction == CudaArgDirection.autoout
-            or self.direction == CudaArgDirection.inout
-        )
-        self.is_input = (
-            self.direction == CudaArgDirection.input or self.direction == CudaArgDirection.inout
-        )
-        self.is_autoout = self.direction == CudaArgDirection.autoout
+        self.is_output = CudaArgDirection.is_output(self.direction)
+        self.is_input = CudaArgDirection.is_input(self.direction)
+        self.is_autoout = CudaArgDirection.is_autoout(self.direction)
 
     def __str__(self) -> str:
         return f"CudaArgType(type='{self.type}',direction='{self.direction}')"
@@ -193,40 +238,8 @@ class CudaArg:
 
         self.specified_type = arg_type
         self.data = data
-        self.nv_data: int | cudart.cudaDevPtr
-
-        # find the datatype
-        final_type_str: str | None = None
-        data_type_registry = CudaDataType.get_registry()
-
-        # we have a desired arg datatype
-        if arg_type is not None:
-            final_type_str = arg_type.type
-            if final_type_str not in data_type_registry:
-                raise CudaArgTypeException(
-                    f"'{final_type_str}' is not a registered data type"
-                )  # TODO
-            datatype = data_type_registry[final_type_str]
-
-            if arg_type.is_input and not datatype.is_type(data):
-                raise CudaDataConversionError(
-                    data, arg_type, f"data could not be converted to '{final_type_str}'"
-                )
-
-            if arg_type.is_autoout:
-                print("arg is autoout, should I allocate memory or something?")
-
-        # no desired type, try all of them
-        if final_type_str is None:
-            for type in data_type_registry:
-                if data_type_registry[type].is_type(data):
-                    final_type_str = type
-                    break
-
-        # finalize the data type
-        if final_type_str is None:
-            raise CudaDataConversionError(data, arg_type, f"converter not found for data: {data}")
-        self.data_type = data_type_registry[final_type_str]
+        self.nv_data: int | float | bool | cudart.cudaDevPtr
+        self.data_type = CudaDataType.resolve(data, arg_type)
         self.ctype = self.data_type.get_ctype(data)
 
         # set the arg direction
@@ -234,15 +247,9 @@ class CudaArg:
         self.direction: CudaArgDirection = (
             arg_type.direction if arg_type is not None else default_direction
         )
-        self.is_output = (
-            self.direction == CudaArgDirection.output
-            or self.direction == CudaArgDirection.autoout
-            or self.direction == CudaArgDirection.inout
-        )
-        self.is_input = (
-            self.direction == CudaArgDirection.input or self.direction == CudaArgDirection.inout
-        )
-        self.is_autoout = self.direction == CudaArgDirection.autoout
+        self.is_output = CudaArgDirection.is_output(self.direction)
+        self.is_input = CudaArgDirection.is_input(self.direction)
+        self.is_autoout = CudaArgDirection.is_autoout(self.direction)
 
         # do memory management
         self.is_pointer = self.ctype.__name__.endswith("_p")
@@ -258,7 +265,11 @@ class CudaArg:
             self.nv_data = self.dev_mem.nv_device_memory
         else:
             enc_data = self.data_type.encode(self.data)
-            assert isinstance(enc_data, int)
+            assert (
+                isinstance(enc_data, int)
+                or isinstance(enc_data, float)
+                or isinstance(enc_data, bool)
+            )
             self.nv_data = enc_data
 
     def copy_to_device(self, stream: CudaStream | None = None) -> None:
@@ -272,6 +283,8 @@ class CudaArg:
 
         enc_data = self.data_type.encode(self.data)
         assert not isinstance(enc_data, int)
+        assert not isinstance(enc_data, float)
+        assert not isinstance(enc_data, bool)
         buf = HostBuffer(enc_data)
 
         assert self.byte_size is not None
@@ -286,7 +299,7 @@ class CudaArg:
 
     def create_copy_to_device_node(self, g: CudaGraph) -> CudaMemcpyNode | None:
         enc_data = self.data_type.encode(self.data)
-        assert not isinstance(enc_data, int)
+        assert not isinstance(enc_data, int | float | bool)
         buf = HostBuffer(enc_data)
 
         assert self.byte_size is not None
@@ -316,7 +329,6 @@ class CudaArg:
             host_buf = HostBuffer(dec_data)  # type: ignore
             self.output_data = host_buf
 
-        print("cuMemcpyDtoHAsync")
         assert self.byte_size is not None
         checkCudaErrorsNoReturn(
             cuda.cuMemcpyDtoHAsync(
@@ -328,7 +340,6 @@ class CudaArg:
         )
 
     def get_output(self) -> Any:
-        print("get_output")
         if self.direction != CudaArgDirection.autoout:
             raise CudaArgException("Attempting to get output for non-'autoout' argument")
 

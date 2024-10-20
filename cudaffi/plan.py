@@ -7,9 +7,13 @@ from enum import Enum, auto
 from functools import update_wrapper
 from typing import Any, Callable, ParamSpec, TypeVar, cast, overload
 
+from .args import CudaArg, CudaArgDirection, CudaDataType
 from .device import init
-from .graph.graph import CudaGraph
-from .module import CudaFunction, CudaFunctionCallGraph, CudaFunctionNameNotFound, CudaModule
+from .graph.graph import CudaGraph, GraphNode
+from .graph.kernel import CudaKernelNode
+from .graph.memcpy import CudaMemcpyNode
+from .memory import HostBuffer
+from .module import CudaFunction, CudaFunctionNameNotFound, CudaModule
 
 ModType = dict[str, str | CudaModule]
 AnyFn = Callable[[Any], Any]
@@ -155,22 +159,84 @@ class CudaPlan:
         # clear any old var values
         for var in self.vars:
             if var.type == CudaPlanVarType.arg:
-                var.val = None
+                var.reset()
+            if var.type == CudaPlanVarType.constant and var.inferred_type is None:
+                var.inferred_type = CudaDataType.resolve(var.val)
 
         # assign input args
-        assert len(self.inputs) == len(args)  # TODO: custom exception
-        for i in range(len(args)):
-            self.inputs[i].val = args[i]
+        if len(self.inputs) != len(args):
+            raise CudaPlanException(
+                f"wrong number of arguments to CudaPlan: expected {len(self.inputs)}, got {len(args)}"
+            )
 
-        # create nodes for each step
+        for input, arg in zip(self.inputs, args):
+            ca = CudaArg(arg)
+            input.inferred_type = ca.data_type
+            input.val = ca.nv_data
+            if ca.is_pointer:
+                assert ca.byte_size is not None
+                assert ca.dev_mem is not None
+                buf = ca.data_type.encode(ca.data)
+                assert not isinstance(buf, float | int)
+                input.host_buf = HostBuffer(buf)
+                input.input_arg = ca
+                input.last_use = CudaMemcpyNode(g, input.host_buf, ca.dev_mem, ca.byte_size)
+
+        # create nodes to copy inputs to device
+        # for input in self.inputs:
+        # CudaArgList(args, fn.arg_types)
+        # start_nodes = arg_list.create_copy_to_device_nodes(g)
+
+        # create nodes for each step in the plan
         for step in self.steps:
-            call_args: list[Any] = []
-
-            for v in step.input_vars:
-                call_args.append(v.val)
-
             if step.call_fn is not None:
-                CudaFunctionCallGraph(g, step.call_fn, call_args)
+                # create call args
+                for v in step.input_vars:
+                    if v.val is None:
+                        raise Exception(f"can't use unassigned cuda plan variable '{v.name}'")
+                    if v.type == CudaPlanVarType.constant and v.inferred_type is None:
+                        v.inferred_type = CudaDataType.resolve(v.val)
+
+                arg_data = [arg.val for arg in step.input_vars]
+                arg_types = [
+                    arg.inferred_type.get_ctype(arg.val)
+                    for arg in step.input_vars
+                    if arg.inferred_type is not None
+                ]
+                assert len(arg_data) == len(arg_types)
+                arg_list = (tuple(arg_data), tuple(arg_types))
+
+                # TODO: check to make sure we have the same number of args and
+                # the same ctypes
+
+                # create kernel node
+                kn = CudaKernelNode(g, step.call_fn, arg_list)
+
+                # create memcpys, create dependencies, save var state
+                assert step.call_fn.arg_types is not None  # TODO
+                for var, arg_type in zip(step.input_vars, step.call_fn.arg_types):
+                    if CudaArgDirection.is_input(arg_type.direction):
+                        if var.last_use is not None:
+                            kn.depends_on(var.last_use)
+                        var.last_use = kn
+                    if var.type == CudaPlanVarType.arg:
+                        var.last_direction = arg_type.direction
+
+        # do output args
+        for input in self.inputs:
+            if input.last_direction is not None and CudaArgDirection.is_output(
+                input.last_direction
+            ):
+                assert input.host_buf is not None
+                assert input.input_arg is not None
+                assert input.input_arg.dev_mem is not None
+                assert input.input_arg.byte_size is not None
+                mcn = CudaMemcpyNode(
+                    g, input.input_arg.dev_mem, input.host_buf, input.input_arg.byte_size
+                )
+                if input.last_use is not None:
+                    mcn.depends_on(input.last_use)
+                input.last_use = mcn
 
         return g
 
@@ -185,6 +251,16 @@ class CudaPlanVar:
         self.name = name
         self.type = type
         self.val = val
+        self.last_use: GraphNode | None = None
+        self.last_direction: CudaArgDirection | None = None
+        self.inferred_type: CudaDataType[Any] | None = None
+        self.host_buf: HostBuffer | None = None
+        self.input_arg: CudaArg | None = None
+
+    def reset(self) -> None:
+        self.val = None
+        self.last_use = None
+        self.last_type = None
 
     def __str__(self) -> str:
         return f"CudaPlanVar(name='{self.name}', type='{self.type.name}', val='{self.val}')"
@@ -269,6 +345,8 @@ class CudaPlanStep:
         return ret
 
     def _decode_call_function(self, call: ast.Call) -> CudaFunction:
+        ret_fn: CudaFunction
+
         match call.func:
             case ast.Name():
                 fn_name = call.func.id
@@ -277,7 +355,7 @@ class CudaPlanStep:
                     raise CudaFunctionNameNotFound(
                         f"function named '{fn_name}' in CudaPlan not found"
                     )
-                return fn
+                ret_fn = fn
             case ast.Attribute():
                 assert isinstance(call.func.value, ast.Name)
                 mod_name = call.func.value.id
@@ -289,9 +367,15 @@ class CudaPlanStep:
                 if not mod_name in self.plan.modules:
                     raise CudaModuleNotFound(f"module '{mod_name}' not found in CudaPlan")
                 mod = self.plan.modules[mod_name]
-                return mod.get_function(fn_name)
+                ret_fn = mod.get_function(fn_name)
             case _:
                 raise CudaPlanException(f"unknown call name: '{call.func.__class__.__name__}'")
+
+        if ret_fn.arg_types is None:
+            raise CudaPlanException(
+                f"function '{ret_fn.name}' didn't have any arg types and arg types are required for CudaPlan"
+            )
+        return ret_fn
 
     def _decode_call_args(self, call: ast.Call) -> tuple[list[CudaPlanVar], dict[str, CudaPlanVar]]:
         args_ret: list[CudaPlanVar] = []
