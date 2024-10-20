@@ -398,6 +398,8 @@ cuLaunchGrid: _cython_3_0_10.cython_function_or_method
 cuLaunchGridAsync: _cython_3_0_10.cython_function_or_method
 cuLaunchHostFunc: _cython_3_0_10.cython_function_or_method
 
+cudaKernelParams = int | tuple[Sequence[Buffer | int | float | bool], Sequence[AnyCType]]
+
 # cuLaunchKernel: _cython_3_0_10.cython_function_or_method
 def cuLaunchKernel(
     f,
@@ -409,7 +411,7 @@ def cuLaunchKernel(
     blockDimZ: int,
     sharedMemBytes: int,
     hStream: CUstream,
-    kernelParams: int | tuple[Sequence[Buffer | int | float | bool], Sequence[AnyCType]],
+    kernelParams: cudaKernelParams,
     extra: Any,
 ) -> tuple[CUresult]: ...
 
@@ -2394,9 +2396,9 @@ class CUexternalSemaphore:
 class CUexternalSemaphoreHandleType(enum.IntEnum):
     __new__: ClassVar[Callable] = ...
     CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D11_FENCE: ClassVar[CUexternalSemaphoreHandleType] = ...
-    CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D11_KEYED_MUTEX: ClassVar[
-        CUexternalSemaphoreHandleType
-    ] = ...
+    CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D11_KEYED_MUTEX: ClassVar[CUexternalSemaphoreHandleType] = (
+        ...
+    )
     CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_D3D11_KEYED_MUTEX_KMT: ClassVar[
         CUexternalSemaphoreHandleType
     ] = ...
@@ -2404,9 +2406,9 @@ class CUexternalSemaphoreHandleType(enum.IntEnum):
     CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_NVSCISYNC: ClassVar[CUexternalSemaphoreHandleType] = ...
     CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD: ClassVar[CUexternalSemaphoreHandleType] = ...
     CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32: ClassVar[CUexternalSemaphoreHandleType] = ...
-    CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT: ClassVar[
-        CUexternalSemaphoreHandleType
-    ] = ...
+    CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT: ClassVar[CUexternalSemaphoreHandleType] = (
+        ...
+    )
     CU_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TIMELINE_SEMAPHORE_FD: ClassVar[
         CUexternalSemaphoreHandleType
     ] = ...
